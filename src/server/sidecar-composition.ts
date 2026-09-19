@@ -85,6 +85,11 @@ const SESSION_EXACT_PATHS = new Set([
   '/api/session-latest-result',
   '/api/session-state',
   '/api/session-watch/register',
+  // Leasing a Browser capability needs this process's own Sidecar identity:
+  // `acquireBrowserCapability` reads MYAGENTS_SIDECAR_ID and Rust only issues a
+  // capability to a live, non-global Session Sidecar. The Global Sidecar runs
+  // the Browser Host but cannot mint a capability for someone else's Session.
+  '/api/browser/view/token',
   '/api/task/poll-background',
   '/cron/execute-sync',
   '/hook/session-start',
@@ -106,6 +111,14 @@ const GLOBAL_EXACT_PATHS = new Set([
   '/agent/upload',
   '/api/assets/qr-code',
   '/api/browser/session/retire',
+  // Panel views of the managed Browser: `ensureBrowserHost()` lives only in the
+  // Global Sidecar, which is also the only role allowed to verify a Browser
+  // capability. Without these entries the capability gate 404s before the
+  // handler runs, and the panel silently falls back to the native webview.
+  '/api/browser/view/open',
+  '/api/browser/view/close',
+  '/api/browser/view/frame',
+  '/api/browser/view/input',
   '/api/edge-tts/preview',
   '/api/global-stats',
   '/api/grok/verify',

@@ -60,6 +60,15 @@ describe('Sidecar production composition', () => {
     ['GET', '/api/cc-plugin/list', 'common'],
     ['GET', '/api/project-capabilities', 'common'],
     ['POST', '/api/project-capability/toggle', 'common'],
+    // Panel views of the managed Browser. The lease needs the Session Sidecar's
+    // own identity to be issued a capability; everything else runs where the
+    // Browser Host lives. Getting either side wrong makes the gate 404 and the
+    // panel silently reverts to the native webview instead of failing loudly.
+    ['POST', '/api/browser/view/token', 'session'],
+    ['POST', '/api/browser/view/open', 'global'],
+    ['GET', '/api/browser/view/frame', 'global'],
+    ['POST', '/api/browser/view/input', 'global'],
+    ['POST', '/api/browser/view/close', 'global'],
   ] as const)('%s %s is owned by %s', (method, path, capability) => {
     expect(classifySidecarRequest(request(path, method))).toBe(capability);
   });
