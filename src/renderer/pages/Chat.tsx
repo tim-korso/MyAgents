@@ -5860,6 +5860,7 @@ export default function Chat({ registerFileEditSubmitter, windowPresentation, on
                 <Suspense fallback={<div className="flex h-full items-center justify-center bg-[var(--paper)]"><Loader2 className="h-5 w-5 animate-spin text-[var(--ink-muted)]" /></div>}>
                   <LazyBrowserPanel
                     tabId={tabId}
+                    sessionId={sessionId}
                     url={browserUrl}
                     isVisible={isActive && splitPanelVisible && splitActiveView === 'browser'}
                     isDraggingSplit={isDraggingSplit}

@@ -9,6 +9,7 @@ import type { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { BrowserContextRegistry } from './context-registry';
 import { verifyBrowserCapability, type VerifiedBrowserCapability } from './capability-client';
 import { compileBrowserRuntimeSettings } from './runtime-settings';
+import { BrowserViewManager } from './screencast';
 
 const MAX_MCP_REQUEST_BYTES = 4 * 1024 * 1024;
 const MAX_MCP_CONNECTIONS = 256;
@@ -186,6 +187,12 @@ export class PlaywrightBrowserHost {
   private activeHostRequests = 0;
   private readonly hostDrainWaiters = new Set<() => void>();
   private closing = false;
+  /**
+   * The panel's view of the managed Chromium. Lives beside the Context
+   * registry it leases pages from, so a Session retirement tears down the
+   * visible view and the Agent's browser together.
+   */
+  readonly views: BrowserViewManager;
 
   constructor(
     httpPort: number,
@@ -201,6 +208,10 @@ export class PlaywrightBrowserHost {
       registry,
       ...dependencies,
     };
+    this.views = new BrowserViewManager({
+      registry,
+      verifyCapability: this.dependencies.verifyCapability,
+    });
     this.allowedHosts = [`127.0.0.1:${httpPort}`];
   }
 
@@ -557,6 +568,7 @@ export class PlaywrightBrowserHost {
   }
 
   async retireProductSession(productSessionId: string): Promise<void> {
+    this.views.closeViewsForSession(productSessionId);
     const candidates = new Set([...this.connections.values(), ...this.pendingConnections]);
     await Promise.all([...candidates]
       .filter(connection => connection.binding.productSessionId === productSessionId)
@@ -628,6 +640,10 @@ export class PlaywrightBrowserHost {
   async shutdown(): Promise<void> {
     if (this.closing) return;
     this.closing = true;
+    // Detach panel views before the registry closes their Contexts: a view
+    // holding a CDP session into a closing Context would otherwise surface as
+    // a spurious BROWSER_CONTEXT_CLOSE_FAILED during shutdown.
+    this.views.shutdown();
     if (this.capabilitySweepTimer) clearTimeout(this.capabilitySweepTimer);
     this.capabilitySweepTimer = null;
     // Pending resource/Context acquisition is itself an admitted Host request. Fence

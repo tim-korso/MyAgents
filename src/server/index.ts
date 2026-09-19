@@ -1992,6 +1992,117 @@ async function main() {
           }, 500);
         }
       }
+      // ── Panel views of the managed Browser ──────────────────────────────
+      //
+      // The split-panel browser is a wry/WKWebView child with no CDP surface,
+      // so Playwright can never drive what the user sees; the Agent instead
+      // drives a separate managed Chromium. These three routes make the panel
+      // a *view* of that same Chromium (CDP screencast out, input back in) so
+      // both surfaces share one browser, one login and one page.
+      //
+      // The Browser capability token never leaves this process: Rust issues it
+      // to a Sidecar, so the renderer cannot address the Browser Host itself
+      // and must come through here.
+      //
+      // A capability is only issued to a real Session Sidecar, and only the
+      // Global Sidecar may *verify* one. The panel therefore needs both: it
+      // leases a token from its own Session Sidecar here, then presents that
+      // token to the Global Sidecar's view routes below. The token is already
+      // bound to this product session, workspace and Host generation, so the
+      // panel's view lands on the same Context the Agent drives.
+      if (pathname === '/api/browser/view/token' && request.method === 'POST') {
+        try {
+          const { acquireBrowserCapability } = await import('./browser-host/capability-client');
+          const capability = await acquireBrowserCapability();
+          return jsonResponse({ success: true, token: capability.token });
+        } catch (error) {
+          return jsonResponse({
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          }, 503);
+        }
+      }
+      if (pathname === '/api/browser/view/open' && request.method === 'POST') {
+        const body = await request.json().catch(() => null) as {
+          token?: unknown;
+          width?: unknown;
+          height?: unknown;
+        } | null;
+        const token = typeof body?.token === 'string' && /^[a-f0-9]{32}$/.test(body.token)
+          ? body.token
+          : null;
+        if (!token) {
+          return jsonResponse({ success: false, error: 'a browser capability token is required' }, 400);
+        }
+        try {
+          const browserHost = await ensureBrowserHost();
+          const view = await browserHost.views.openView(
+            token,
+            typeof body?.width === 'number' ? body.width : 0,
+            typeof body?.height === 'number' ? body.height : 0,
+            () => {},
+          );
+          return jsonResponse({ success: true, viewId: view.id });
+        } catch (error) {
+          return jsonResponse({
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          }, 503);
+        }
+      }
+      if (pathname === '/api/browser/view/frame' && request.method === 'GET') {
+        const viewId = url.searchParams.get('viewId') ?? '';
+        const sinceSeq = Number(url.searchParams.get('since') ?? '0');
+        try {
+          const browserHost = await ensureBrowserHost();
+          return jsonResponse({
+            success: true,
+            ...browserHost.views.latestFrame(
+              viewId,
+              Number.isFinite(sinceSeq) ? sinceSeq : 0,
+            ),
+          });
+        } catch (error) {
+          return jsonResponse({
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          }, 404);
+        }
+      }
+      if (pathname === '/api/browser/view/input' && request.method === 'POST') {
+        const body = await request.json().catch(() => null) as {
+          viewId?: unknown;
+          method?: unknown;
+          params?: unknown;
+        } | null;
+        if (typeof body?.viewId !== 'string' || typeof body?.method !== 'string') {
+          return jsonResponse({ success: false, error: 'viewId and method are required' }, 400);
+        }
+        try {
+          const browserHost = await ensureBrowserHost();
+          const params = body.params && typeof body.params === 'object' && !Array.isArray(body.params)
+            ? body.params as Record<string, unknown>
+            : {};
+          await browserHost.views.dispatchInput(body.viewId, body.method, params);
+          return jsonResponse({ success: true });
+        } catch (error) {
+          return jsonResponse({
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          }, 400);
+        }
+      }
+      if (pathname === '/api/browser/view/close' && request.method === 'POST') {
+        const body = await request.json().catch(() => null) as { viewId?: unknown } | null;
+        if (typeof body?.viewId !== 'string') {
+          return jsonResponse({ success: false, error: 'viewId is required' }, 400);
+        }
+        const browserHost = await ensureBrowserHost();
+        // Idempotent: a closing panel may race the idle sweep, and a missing
+        // view is the desired end state, not an error.
+        browserHost.views.closeView(body.viewId, 'panel-closed');
+        return jsonResponse({ success: true });
+      }
       // (removed) `POST /health/ready/retry` — pre-0.2.0 endpoint that reset
       // DeferredInitState to `pending` and returned 202 promising a re-run,
       // but no in-process re-runner exists (the deferred init block is a

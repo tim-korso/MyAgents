@@ -26,9 +26,16 @@ import {
 import { useBrowserOverlayGuard } from '@/hooks/useBrowserOverlayGuard';
 import { useToast } from '@/components/Toast';
 import Tip from '@/components/Tip';
+import ManagedBrowserCanvas, { type ManagedViewState } from '@/components/ManagedBrowserCanvas';
 
 interface BrowserPanelProps {
   tabId: string;
+  /**
+   * Product Session this panel belongs to. Needed only to lease a managed-Browser
+   * capability: Rust issues one to a Session Sidecar for its own session, so the
+   * panel cannot borrow the Global Sidecar's identity to get one.
+   */
+  sessionId?: string | null;
   url: string | null;
   /** Whether this panel should be visible (includes isActive + splitActiveView + splitPanelVisible) */
   isVisible: boolean;
@@ -62,6 +69,7 @@ interface BrowserPanelProps {
 
 export default function BrowserPanel({
   tabId,
+  sessionId,
   url,
   isVisible,
   isDraggingSplit,
@@ -357,12 +365,20 @@ export default function BrowserPanel({
   // `currentUrl` would otherwise hide the just-alive webview).
   const isBlankPage = url === BROWSER_BLANK_URL && !hasNavigated;
 
+  // When the managed view is live, the panel is painting the Agent's own
+  // Chromium, so the native child webview must stay hidden: it is an OS-level
+  // sibling that always paints above DOM, and showing both would put the
+  // user's private webview on top of the shared page.
+  const [managedViewState, setManagedViewState] = useState<ManagedViewState>('idle');
+  const managedViewLive = managedViewState === 'live' || managedViewState === 'connecting';
+
   // ── Consolidated show/hide ──
   useEffect(() => {
     const lifecycleToken = lifecycleTokenRef.current;
     if (!browserAlive || !lifecycleToken) return;
     const nativeViewSuspended = isDraggingSplit || isSplitTransitioning;
-    const shouldShow = isVisible && !nativeViewSuspended && !overlayDetected && !isBlankPage;
+    const shouldShow = isVisible && !nativeViewSuspended && !overlayDetected && !isBlankPage
+      && !managedViewLive;
     if (shouldShow) {
       // SHOW restores Rust's cached geometry; the reconciler keeps that cache
       // current (it syncs even while hidden), and corrects any residue within
@@ -371,7 +387,7 @@ export default function BrowserPanel({
     } else {
       invoke('cmd_browser_hide', { tabId, lifecycleToken }).catch(() => {});
     }
-  }, [isVisible, isDraggingSplit, isSplitTransitioning, overlayDetected, browserAlive, isBlankPage, tabId]);
+  }, [isVisible, isDraggingSplit, isSplitTransitioning, overlayDetected, browserAlive, isBlankPage, tabId, managedViewLive]);
 
   // Parent reload intents stay generation-local; Chat never owns the native
   // token and therefore cannot accidentally reload a reopened BrowserPanel.
@@ -541,7 +557,18 @@ export default function BrowserPanel({
 
       {/* Placeholder container — native Webview overlays this area */}
       <div ref={containerRef} className="relative min-h-0 flex-1 bg-[var(--paper)]">
-        {!browserAlive && !isBlankPage && (
+        {/* Managed view of the Agent's Chromium. Renders nothing (and reports
+            `unavailable`) when that browser is not reachable, leaving the
+            native webview path untouched. */}
+        {isVisible && (
+          <ManagedBrowserCanvas
+            containerRef={containerRef}
+            owner={sessionId ? { sessionId, tabId } : null}
+            isVisible={isVisible}
+            onStateChange={setManagedViewState}
+          />
+        )}
+        {!browserAlive && !isBlankPage && !managedViewLive && (
           <div className="flex h-full items-center justify-center">
             <div className="flex flex-col items-center gap-2 text-[var(--ink-subtle)]">
               <Globe className="h-6 w-6" />
