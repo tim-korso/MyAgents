@@ -1,0 +1,22 @@
+{
+  "generatedAt": "2026-07-09",
+  "outputRoot": ".",
+  "sourceSize": 512,
+  "sizes": [64, 128, 256],
+  "webpQuality": 86,
+  "previewTileSize": 192,
+  "sets": [
+    {
+      "key": "people",
+      "rawDir": "raw/people",
+      "outputDir": "r2/avatars/presets/people/v1",
+      "prefix": "person"
+    },
+    {
+      "key": "agents",
+      "rawDir": "raw/agents",
+      "outputDir": "r2/avatars/presets/agents/v1",
+      "prefix": "agent"
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+[
+  {
+    "id": "mino-folder-spark",
+    "displayName": "Mino Folder Spark",
+    "description": "Living folder body, lightning antenna, the closest baseline to Mino.",
+    "source": "single-icon-v2 from reference sheet ig_089f60c872bba439016a2e23564e7c8191a3bec4fb7c053f51.png"
+  },
+  {
+    "id": "mino-memory-capsule",
+    "displayName": "Mino Memory Capsule",
+    "description": "Archive capsule with memory-card accents for the memory-brain direction.",
+    "source": "single-icon-v2 derived from reference sheet memory-card motif"
+  },
+  {
+    "id": "mino-terminal-cube",
+    "displayName": "Mino Terminal Cube",
+    "description": "Terminal-screen creature for the direct hacker-workbench direction.",
+    "source": "single-icon-v2 derived from reference sheet terminal motif"
+  },
+  {
+    "id": "mino-cloud-sync",
+    "displayName": "Mino Cloud Sync",
+    "description": "Cloud and Git-branch visual for multi-machine continuity.",
+    "source": "single-icon-v2 derived from reference sheet cloud motif"
+  },
+  {
+    "id": "mino-workbench",
+    "displayName": "Mino Workbench",
+    "description": "Tiny desk companion for pragmatic task execution.",
+    "source": "single-icon-v2 derived from reference sheet workbench motif"
+  },
+  {
+    "id": "mino-compass",
+    "displayName": "Mino Compass",
+    "description": "Compass-like companion for strong opinions and direction.",
+    "source": "single-icon-v2 derived from reference sheet compass motif"
+  },
+  {
+    "id": "mino-context-lantern",
+    "displayName": "Mino Context Lantern",
+    "description": "Lantern companion for context illumination and low-noise focus.",
+    "source": "single-icon-v2 derived from reference sheet lantern motif"
+  },
+  {
+    "id": "mino-prism-notebook",
+    "displayName": "Mino Prism Notebook",
+    "description": "Notebook-prism hybrid for memory plus judgment.",
+    "source": "single-icon-v2 derived from reference sheet notebook motif"
+  },
+  {
+    "id": "mino-signal-tower",
+    "displayName": "Mino Signal Tower",
+    "description": "Signal companion for attention/context routing.",
+    "source": "single-icon-v2 derived from reference sheet signal motif"
+  },
+  {
+    "id": "mino-seedling-folder",
+    "displayName": "Mino Seedling Folder",
+    "description": "Growing folder creature for Always Evolving.",
+    "source": "single-icon-v2 derived from reference sheet seedling motif"
+  },
+  {
+    "id": "mino-mono-orb-folder",
+    "displayName": "Mino Mono Orb Folder",
+    "description": "Low-saturation orb-folder hybrid for quiet mode.",
+    "source": "single-icon-v2 derived from reference sheet mono/orb motif"
+  }
+]

@@ -1,0 +1,915 @@
+{
+  "cases": [
+    {
+      "name": "interrupted-open-turn",
+      "wire": "{\"kind\":\"session-transcript\",\"version\":2,\"sessionId\":\"fixture-session\",\"generation\":\"g1\",\"baseRevision\":0,\"baseline\":false}\n{\"batch\":{\"id\":\"b1\",\"mode\":\"delta\",\"fromRevision\":1,\"revision\":3,\"operations\":[{\"kind\":\"message-create\",\"message\":{\"id\":\"u1\",\"role\":\"user\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":\"第一条问题🙂\",\"turnId\":\"t1\"}},{\"kind\":\"turn-update\",\"turn\":{\"id\":\"t1\",\"rootUserMessageId\":\"u1\",\"startedAt\":\"2026-09-12T00:00:00.000Z\",\"status\":\"running\"}},{\"kind\":\"message-create\",\"message\":{\"id\":\"a1\",\"role\":\"assistant\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":[{\"id\":\"text-1\",\"type\":\"text\",\"text\":\"开头🙂\"}],\"turnId\":\"t1\",\"transcriptState\":\"streaming\"}}]},\"checksum\":\"5960b7ae4c97f10b718061e08dc1848ae7400048840970d6d834e1f49e8c7965\"}\n",
+      "expected": {
+        "messages": [
+          {
+            "id": "u1",
+            "role": "user",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": "第一条问题🙂",
+            "turnId": "t1"
+          },
+          {
+            "id": "a1",
+            "role": "assistant",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": [
+              {
+                "id": "text-1",
+                "type": "text",
+                "text": "开头🙂"
+              }
+            ],
+            "turnId": "t1",
+            "transcriptState": "streaming"
+          }
+        ],
+        "turns": [
+          {
+            "id": "t1",
+            "rootUserMessageId": "u1",
+            "startedAt": "2026-09-12T00:00:00.000Z",
+            "status": "running"
+          }
+        ],
+        "revision": 3,
+        "lastBatchId": "b1",
+        "validBytes": 768,
+        "tail": "clean"
+      }
+    },
+    {
+      "name": "torn-tail",
+      "wire": "{\"kind\":\"session-transcript\",\"version\":2,\"sessionId\":\"fixture-session\",\"generation\":\"g1\",\"baseRevision\":0,\"baseline\":false}\n{\"batch\":{\"id\":\"b1\",\"mode\":\"delta\",\"fromRevision\":1,\"revision\":3,\"operations\":[{\"kind\":\"message-create\",\"message\":{\"id\":\"u1\",\"role\":\"user\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":\"第一条问题🙂\",\"turnId\":\"t1\"}},{\"kind\":\"turn-update\",\"turn\":{\"id\":\"t1\",\"rootUserMessageId\":\"u1\",\"startedAt\":\"2026-09-12T00:00:00.000Z\",\"status\":\"running\"}},{\"kind\":\"message-create\",\"message\":{\"id\":\"a1\",\"role\":\"assistant\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":[{\"id\":\"text-1\",\"type\":\"text\",\"text\":\"开头🙂\"}],\"turnId\":\"t1\",\"transcriptState\":\"streaming\"}}]},\"checksum\":\"5960b7ae4c97f10b718061e08dc1848ae7400048840970d6d834e1f49e8c7965\"}\n{\"batch\":",
+      "expected": {
+        "messages": [
+          {
+            "id": "u1",
+            "role": "user",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": "第一条问题🙂",
+            "turnId": "t1"
+          },
+          {
+            "id": "a1",
+            "role": "assistant",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": [
+              {
+                "id": "text-1",
+                "type": "text",
+                "text": "开头🙂"
+              }
+            ],
+            "turnId": "t1",
+            "transcriptState": "streaming"
+          }
+        ],
+        "turns": [
+          {
+            "id": "t1",
+            "rootUserMessageId": "u1",
+            "startedAt": "2026-09-12T00:00:00.000Z",
+            "status": "running"
+          }
+        ],
+        "revision": 3,
+        "lastBatchId": "b1",
+        "validBytes": 768,
+        "tail": "incomplete"
+      }
+    },
+    {
+      "name": "utf16-offset",
+      "wire": "{\"kind\":\"session-transcript\",\"version\":2,\"sessionId\":\"fixture-session\",\"generation\":\"g1\",\"baseRevision\":0,\"baseline\":false}\n{\"batch\":{\"id\":\"b1\",\"mode\":\"delta\",\"fromRevision\":1,\"revision\":3,\"operations\":[{\"kind\":\"message-create\",\"message\":{\"id\":\"u1\",\"role\":\"user\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":\"第一条问题🙂\",\"turnId\":\"t1\"}},{\"kind\":\"turn-update\",\"turn\":{\"id\":\"t1\",\"rootUserMessageId\":\"u1\",\"startedAt\":\"2026-09-12T00:00:00.000Z\",\"status\":\"running\"}},{\"kind\":\"message-create\",\"message\":{\"id\":\"a1\",\"role\":\"assistant\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":[{\"id\":\"text-1\",\"type\":\"text\",\"text\":\"开头🙂\"}],\"turnId\":\"t1\",\"transcriptState\":\"streaming\"}}]},\"checksum\":\"5960b7ae4c97f10b718061e08dc1848ae7400048840970d6d834e1f49e8c7965\"}\n{\"batch\":{\"id\":\"b2\",\"mode\":\"delta\",\"fromRevision\":4,\"revision\":4,\"operations\":[{\"kind\":\"text-append\",\"messageId\":\"a1\",\"field\":\"text\",\"offset\":4,\"text\":\"接着回答\",\"blockId\":\"text-1\"}]},\"checksum\":\"e022f3279d9c4d98f81fea991eee501727bd9927b088f230c76349b947bb652e\"}\n",
+      "expected": {
+        "messages": [
+          {
+            "id": "u1",
+            "role": "user",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": "第一条问题🙂",
+            "turnId": "t1"
+          },
+          {
+            "id": "a1",
+            "role": "assistant",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": [
+              {
+                "id": "text-1",
+                "type": "text",
+                "text": "开头🙂接着回答"
+              }
+            ],
+            "turnId": "t1",
+            "transcriptState": "streaming"
+          }
+        ],
+        "turns": [
+          {
+            "id": "t1",
+            "rootUserMessageId": "u1",
+            "startedAt": "2026-09-12T00:00:00.000Z",
+            "status": "running"
+          }
+        ],
+        "revision": 4,
+        "lastBatchId": "b2",
+        "validBytes": 1035,
+        "tail": "clean"
+      }
+    },
+    {
+      "name": "atomic-batch-rollback-and-stop",
+      "wire": "{\"kind\":\"session-transcript\",\"version\":2,\"sessionId\":\"fixture-session\",\"generation\":\"g1\",\"baseRevision\":0,\"baseline\":false}\n{\"batch\":{\"id\":\"b1\",\"mode\":\"delta\",\"fromRevision\":1,\"revision\":3,\"operations\":[{\"kind\":\"message-create\",\"message\":{\"id\":\"u1\",\"role\":\"user\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":\"第一条问题🙂\",\"turnId\":\"t1\"}},{\"kind\":\"turn-update\",\"turn\":{\"id\":\"t1\",\"rootUserMessageId\":\"u1\",\"startedAt\":\"2026-09-12T00:00:00.000Z\",\"status\":\"running\"}},{\"kind\":\"message-create\",\"message\":{\"id\":\"a1\",\"role\":\"assistant\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":[{\"id\":\"text-1\",\"type\":\"text\",\"text\":\"开头🙂\"}],\"turnId\":\"t1\",\"transcriptState\":\"streaming\"}}]},\"checksum\":\"5960b7ae4c97f10b718061e08dc1848ae7400048840970d6d834e1f49e8c7965\"}\n{\"batch\":{\"id\":\"b2\",\"mode\":\"delta\",\"fromRevision\":4,\"revision\":7,\"operations\":[{\"kind\":\"text-append\",\"messageId\":\"a1\",\"field\":\"text\",\"offset\":4,\"text\":\"临时\",\"blockId\":\"text-1\"},{\"kind\":\"messages-remove\",\"messageIds\":[\"u1\"]},{\"kind\":\"message-create\",\"message\":{\"id\":\"transient\",\"role\":\"user\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":\"must disappear\"}},{\"kind\":\"text-append\",\"messageId\":\"missing\",\"field\":\"text\",\"offset\":0,\"text\":\"oops\"}]},\"checksum\":\"d9ab2c4a45eed5995cd80b7c06bee2efdc3c35db9dfeb56d9a2ab7ec03998f2c\"}\n{\"batch\":{\"id\":\"b3\",\"mode\":\"delta\",\"fromRevision\":8,\"revision\":8,\"operations\":[{\"kind\":\"message-create\",\"message\":{\"id\":\"later\",\"role\":\"user\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":\"not accepted\"}}]},\"checksum\":\"f973df629dbbc68ef2d4233e48351a9343cdeb87b500551d7a43d54d7f940468\"}\n",
+      "expected": {
+        "messages": [
+          {
+            "id": "u1",
+            "role": "user",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": "第一条问题🙂",
+            "turnId": "t1"
+          },
+          {
+            "id": "a1",
+            "role": "assistant",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": [
+              {
+                "id": "text-1",
+                "type": "text",
+                "text": "开头🙂"
+              }
+            ],
+            "turnId": "t1",
+            "transcriptState": "streaming"
+          }
+        ],
+        "turns": [
+          {
+            "id": "t1",
+            "rootUserMessageId": "u1",
+            "startedAt": "2026-09-12T00:00:00.000Z",
+            "status": "running"
+          }
+        ],
+        "revision": 3,
+        "lastBatchId": "b1",
+        "validBytes": 768,
+        "tail": "invalid"
+      }
+    },
+    {
+      "name": "wrong-utf16-offset",
+      "wire": "{\"kind\":\"session-transcript\",\"version\":2,\"sessionId\":\"fixture-session\",\"generation\":\"g1\",\"baseRevision\":0,\"baseline\":false}\n{\"batch\":{\"id\":\"b1\",\"mode\":\"delta\",\"fromRevision\":1,\"revision\":3,\"operations\":[{\"kind\":\"message-create\",\"message\":{\"id\":\"u1\",\"role\":\"user\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":\"第一条问题🙂\",\"turnId\":\"t1\"}},{\"kind\":\"turn-update\",\"turn\":{\"id\":\"t1\",\"rootUserMessageId\":\"u1\",\"startedAt\":\"2026-09-12T00:00:00.000Z\",\"status\":\"running\"}},{\"kind\":\"message-create\",\"message\":{\"id\":\"a1\",\"role\":\"assistant\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":[{\"id\":\"text-1\",\"type\":\"text\",\"text\":\"开头🙂\"}],\"turnId\":\"t1\",\"transcriptState\":\"streaming\"}}]},\"checksum\":\"5960b7ae4c97f10b718061e08dc1848ae7400048840970d6d834e1f49e8c7965\"}\n{\"batch\":{\"id\":\"b2\",\"mode\":\"delta\",\"fromRevision\":4,\"revision\":4,\"operations\":[{\"kind\":\"text-append\",\"messageId\":\"a1\",\"field\":\"text\",\"offset\":3,\"text\":\"bad\",\"blockId\":\"text-1\"}]},\"checksum\":\"c48cc5a84ba6df57adeebb751018d2df9a4c327853a30ef6203ccdbcd591be9e\"}\n",
+      "expected": {
+        "messages": [
+          {
+            "id": "u1",
+            "role": "user",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": "第一条问题🙂",
+            "turnId": "t1"
+          },
+          {
+            "id": "a1",
+            "role": "assistant",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": [
+              {
+                "id": "text-1",
+                "type": "text",
+                "text": "开头🙂"
+              }
+            ],
+            "turnId": "t1",
+            "transcriptState": "streaming"
+          }
+        ],
+        "turns": [
+          {
+            "id": "t1",
+            "rootUserMessageId": "u1",
+            "startedAt": "2026-09-12T00:00:00.000Z",
+            "status": "running"
+          }
+        ],
+        "revision": 3,
+        "lastBatchId": "b1",
+        "validBytes": 768,
+        "tail": "invalid"
+      }
+    },
+    {
+      "name": "revision-gap",
+      "wire": "{\"kind\":\"session-transcript\",\"version\":2,\"sessionId\":\"fixture-session\",\"generation\":\"g1\",\"baseRevision\":0,\"baseline\":false}\n{\"batch\":{\"id\":\"b1\",\"mode\":\"delta\",\"fromRevision\":1,\"revision\":3,\"operations\":[{\"kind\":\"message-create\",\"message\":{\"id\":\"u1\",\"role\":\"user\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":\"第一条问题🙂\",\"turnId\":\"t1\"}},{\"kind\":\"turn-update\",\"turn\":{\"id\":\"t1\",\"rootUserMessageId\":\"u1\",\"startedAt\":\"2026-09-12T00:00:00.000Z\",\"status\":\"running\"}},{\"kind\":\"message-create\",\"message\":{\"id\":\"a1\",\"role\":\"assistant\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":[{\"id\":\"text-1\",\"type\":\"text\",\"text\":\"开头🙂\"}],\"turnId\":\"t1\",\"transcriptState\":\"streaming\"}}]},\"checksum\":\"5960b7ae4c97f10b718061e08dc1848ae7400048840970d6d834e1f49e8c7965\"}\n{\"batch\":{\"id\":\"b2\",\"mode\":\"delta\",\"fromRevision\":5,\"revision\":5,\"operations\":[]},\"checksum\":\"1fed7185ad04c742c3e5080dd3d578e2134ff635494f56c216baa19e96b953ea\"}\n",
+      "expected": {
+        "messages": [
+          {
+            "id": "u1",
+            "role": "user",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": "第一条问题🙂",
+            "turnId": "t1"
+          },
+          {
+            "id": "a1",
+            "role": "assistant",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": [
+              {
+                "id": "text-1",
+                "type": "text",
+                "text": "开头🙂"
+              }
+            ],
+            "turnId": "t1",
+            "transcriptState": "streaming"
+          }
+        ],
+        "turns": [
+          {
+            "id": "t1",
+            "rootUserMessageId": "u1",
+            "startedAt": "2026-09-12T00:00:00.000Z",
+            "status": "running"
+          }
+        ],
+        "revision": 3,
+        "lastBatchId": "b1",
+        "validBytes": 768,
+        "tail": "invalid"
+      }
+    },
+    {
+      "name": "checksum-mismatch",
+      "wire": "{\"kind\":\"session-transcript\",\"version\":2,\"sessionId\":\"fixture-session\",\"generation\":\"g1\",\"baseRevision\":0,\"baseline\":false}\n{\"batch\":{\"id\":\"b1\",\"mode\":\"delta\",\"fromRevision\":1,\"revision\":3,\"operations\":[{\"kind\":\"message-create\",\"message\":{\"id\":\"u1\",\"role\":\"user\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":\"第一条问题🙂\",\"turnId\":\"t1\"}},{\"kind\":\"turn-update\",\"turn\":{\"id\":\"t1\",\"rootUserMessageId\":\"u1\",\"startedAt\":\"2026-09-12T00:00:00.000Z\",\"status\":\"running\"}},{\"kind\":\"message-create\",\"message\":{\"id\":\"a1\",\"role\":\"assistant\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":[{\"id\":\"text-1\",\"type\":\"text\",\"text\":\"开头🙂\"}],\"turnId\":\"t1\",\"transcriptState\":\"streaming\"}}]},\"checksum\":\"5960b7ae4c97f10b718061e08dc1848ae7400048840970d6d834e1f49e8c7965\"}\n{\"batch\":{\"id\":\"xx\",\"mode\":\"delta\",\"fromRevision\":4,\"revision\":4,\"operations\":[]},\"checksum\":\"43e6c375c9548fba8bc0021b8b896e6615cef5226204c0d130bed31a9f958bca\"}\n",
+      "expected": {
+        "messages": [
+          {
+            "id": "u1",
+            "role": "user",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": "第一条问题🙂",
+            "turnId": "t1"
+          },
+          {
+            "id": "a1",
+            "role": "assistant",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": [
+              {
+                "id": "text-1",
+                "type": "text",
+                "text": "开头🙂"
+              }
+            ],
+            "turnId": "t1",
+            "transcriptState": "streaming"
+          }
+        ],
+        "turns": [
+          {
+            "id": "t1",
+            "rootUserMessageId": "u1",
+            "startedAt": "2026-09-12T00:00:00.000Z",
+            "status": "running"
+          }
+        ],
+        "revision": 3,
+        "lastBatchId": "b1",
+        "validBytes": 768,
+        "tail": "invalid"
+      }
+    },
+    {
+      "name": "unknown-operation",
+      "wire": "{\"kind\":\"session-transcript\",\"version\":2,\"sessionId\":\"fixture-session\",\"generation\":\"g1\",\"baseRevision\":0,\"baseline\":false}\n{\"batch\":{\"id\":\"b1\",\"mode\":\"delta\",\"fromRevision\":1,\"revision\":3,\"operations\":[{\"kind\":\"message-create\",\"message\":{\"id\":\"u1\",\"role\":\"user\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":\"第一条问题🙂\",\"turnId\":\"t1\"}},{\"kind\":\"turn-update\",\"turn\":{\"id\":\"t1\",\"rootUserMessageId\":\"u1\",\"startedAt\":\"2026-09-12T00:00:00.000Z\",\"status\":\"running\"}},{\"kind\":\"message-create\",\"message\":{\"id\":\"a1\",\"role\":\"assistant\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":[{\"id\":\"text-1\",\"type\":\"text\",\"text\":\"开头🙂\"}],\"turnId\":\"t1\",\"transcriptState\":\"streaming\"}}]},\"checksum\":\"5960b7ae4c97f10b718061e08dc1848ae7400048840970d6d834e1f49e8c7965\"}\n{\"batch\":{\"id\":\"b2\",\"mode\":\"delta\",\"fromRevision\":4,\"revision\":4,\"operations\":[{\"kind\":\"arbitrary-patch\"}]},\"checksum\":\"bfa8933acc29de96dc5b710b14a3616bf002d1a866b08b9236682cee20816941\"}\n",
+      "expected": {
+        "messages": [
+          {
+            "id": "u1",
+            "role": "user",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": "第一条问题🙂",
+            "turnId": "t1"
+          },
+          {
+            "id": "a1",
+            "role": "assistant",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": [
+              {
+                "id": "text-1",
+                "type": "text",
+                "text": "开头🙂"
+              }
+            ],
+            "turnId": "t1",
+            "transcriptState": "streaming"
+          }
+        ],
+        "turns": [
+          {
+            "id": "t1",
+            "rootUserMessageId": "u1",
+            "startedAt": "2026-09-12T00:00:00.000Z",
+            "status": "running"
+          }
+        ],
+        "revision": 3,
+        "lastBatchId": "b1",
+        "validBytes": 768,
+        "tail": "invalid"
+      }
+    },
+    {
+      "name": "duplicate-message",
+      "wire": "{\"kind\":\"session-transcript\",\"version\":2,\"sessionId\":\"fixture-session\",\"generation\":\"g1\",\"baseRevision\":0,\"baseline\":false}\n{\"batch\":{\"id\":\"b1\",\"mode\":\"delta\",\"fromRevision\":1,\"revision\":3,\"operations\":[{\"kind\":\"message-create\",\"message\":{\"id\":\"u1\",\"role\":\"user\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":\"第一条问题🙂\",\"turnId\":\"t1\"}},{\"kind\":\"turn-update\",\"turn\":{\"id\":\"t1\",\"rootUserMessageId\":\"u1\",\"startedAt\":\"2026-09-12T00:00:00.000Z\",\"status\":\"running\"}},{\"kind\":\"message-create\",\"message\":{\"id\":\"a1\",\"role\":\"assistant\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":[{\"id\":\"text-1\",\"type\":\"text\",\"text\":\"开头🙂\"}],\"turnId\":\"t1\",\"transcriptState\":\"streaming\"}}]},\"checksum\":\"5960b7ae4c97f10b718061e08dc1848ae7400048840970d6d834e1f49e8c7965\"}\n{\"batch\":{\"id\":\"b2\",\"mode\":\"delta\",\"fromRevision\":4,\"revision\":4,\"operations\":[{\"kind\":\"message-create\",\"message\":{\"id\":\"u1\",\"role\":\"user\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":\"第一条问题🙂\",\"turnId\":\"t1\"}}]},\"checksum\":\"d70038cf1a586d4fc65ba2ab31e8d34d9c338c8f0775377fa649c89266d26d37\"}\n",
+      "expected": {
+        "messages": [
+          {
+            "id": "u1",
+            "role": "user",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": "第一条问题🙂",
+            "turnId": "t1"
+          },
+          {
+            "id": "a1",
+            "role": "assistant",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": [
+              {
+                "id": "text-1",
+                "type": "text",
+                "text": "开头🙂"
+              }
+            ],
+            "turnId": "t1",
+            "transcriptState": "streaming"
+          }
+        ],
+        "turns": [
+          {
+            "id": "t1",
+            "rootUserMessageId": "u1",
+            "startedAt": "2026-09-12T00:00:00.000Z",
+            "status": "running"
+          }
+        ],
+        "revision": 3,
+        "lastBatchId": "b1",
+        "validBytes": 768,
+        "tail": "invalid"
+      }
+    },
+    {
+      "name": "identity-override",
+      "wire": "{\"kind\":\"session-transcript\",\"version\":2,\"sessionId\":\"fixture-session\",\"generation\":\"g1\",\"baseRevision\":0,\"baseline\":false}\n{\"batch\":{\"id\":\"b1\",\"mode\":\"delta\",\"fromRevision\":1,\"revision\":3,\"operations\":[{\"kind\":\"message-create\",\"message\":{\"id\":\"u1\",\"role\":\"user\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":\"第一条问题🙂\",\"turnId\":\"t1\"}},{\"kind\":\"turn-update\",\"turn\":{\"id\":\"t1\",\"rootUserMessageId\":\"u1\",\"startedAt\":\"2026-09-12T00:00:00.000Z\",\"status\":\"running\"}},{\"kind\":\"message-create\",\"message\":{\"id\":\"a1\",\"role\":\"assistant\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":[{\"id\":\"text-1\",\"type\":\"text\",\"text\":\"开头🙂\"}],\"turnId\":\"t1\",\"transcriptState\":\"streaming\"}}]},\"checksum\":\"5960b7ae4c97f10b718061e08dc1848ae7400048840970d6d834e1f49e8c7965\"}\n{\"batch\":{\"id\":\"b2\",\"mode\":\"delta\",\"fromRevision\":4,\"revision\":4,\"operations\":[{\"kind\":\"message-update\",\"messageId\":\"a1\",\"details\":{\"role\":\"user\"}}]},\"checksum\":\"a532ca7cb5cd967cff60ca5970804b046df9d9aefa754195bb3b62961a26a54a\"}\n",
+      "expected": {
+        "messages": [
+          {
+            "id": "u1",
+            "role": "user",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": "第一条问题🙂",
+            "turnId": "t1"
+          },
+          {
+            "id": "a1",
+            "role": "assistant",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": [
+              {
+                "id": "text-1",
+                "type": "text",
+                "text": "开头🙂"
+              }
+            ],
+            "turnId": "t1",
+            "transcriptState": "streaming"
+          }
+        ],
+        "turns": [
+          {
+            "id": "t1",
+            "rootUserMessageId": "u1",
+            "startedAt": "2026-09-12T00:00:00.000Z",
+            "status": "running"
+          }
+        ],
+        "revision": 3,
+        "lastBatchId": "b1",
+        "validBytes": 768,
+        "tail": "invalid"
+      }
+    },
+    {
+      "name": "steer-late-tool-confirm-retract-usage",
+      "wire": "{\"kind\":\"session-transcript\",\"version\":2,\"sessionId\":\"fixture-session\",\"generation\":\"g1\",\"baseRevision\":0,\"baseline\":false}\n{\"batch\":{\"id\":\"b1\",\"mode\":\"delta\",\"fromRevision\":1,\"revision\":3,\"operations\":[{\"kind\":\"message-create\",\"message\":{\"id\":\"u1\",\"role\":\"user\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":\"第一条问题🙂\",\"turnId\":\"t1\"}},{\"kind\":\"turn-update\",\"turn\":{\"id\":\"t1\",\"rootUserMessageId\":\"u1\",\"startedAt\":\"2026-09-12T00:00:00.000Z\",\"status\":\"running\"}},{\"kind\":\"message-create\",\"message\":{\"id\":\"a1\",\"role\":\"assistant\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":[{\"id\":\"text-1\",\"type\":\"text\",\"text\":\"开头🙂\"}],\"turnId\":\"t1\",\"transcriptState\":\"streaming\"}}]},\"checksum\":\"5960b7ae4c97f10b718061e08dc1848ae7400048840970d6d834e1f49e8c7965\"}\n{\"batch\":{\"id\":\"b2\",\"mode\":\"delta\",\"fromRevision\":4,\"revision\":18,\"operations\":[{\"kind\":\"block-upsert\",\"messageId\":\"a1\",\"block\":{\"id\":\"tool-block\",\"type\":\"tool_use\",\"tool\":{\"id\":\"tool-1\",\"name\":\"Task\",\"input\":{},\"inputJson\":\"\",\"isLoading\":true}}},{\"kind\":\"subagent-upsert\",\"messageId\":\"a1\",\"blockId\":\"tool-block\",\"call\":{\"id\":\"nested-1\",\"name\":\"Read\",\"input\":{},\"inputJson\":\"\",\"result\":\"\",\"isLoading\":true}},{\"kind\":\"message-create\",\"message\":{\"id\":\"u2\",\"role\":\"user\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":\"第二条插话\",\"turnId\":\"t1\"}},{\"kind\":\"message-create\",\"message\":{\"id\":\"a2\",\"role\":\"assistant\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":\"新段\",\"turnId\":\"t1\",\"transcriptState\":\"streaming\"}},{\"kind\":\"text-append\",\"messageId\":\"a1\",\"field\":\"inputJson\",\"offset\":0,\"text\":\"{\\\"q\\\":\\\"中文🙂\\\"}\",\"blockId\":\"tool-block\"},{\"kind\":\"block-update\",\"messageId\":\"a1\",\"blockId\":\"tool-block\",\"target\":\"tool\",\"details\":{\"inputComplete\":true}},{\"kind\":\"text-append\",\"messageId\":\"a1\",\"field\":\"result\",\"offset\":0,\"text\":\"晚到工具结果🙂\",\"blockId\":\"tool-block\",\"subagentToolId\":\"nested-1\"},{\"kind\":\"block-update\",\"messageId\":\"a1\",\"blockId\":\"tool-block\",\"target\":\"tool\",\"subagentToolId\":\"nested-1\",\"details\":{\"isLoading\":false,\"attachments\":[{\"id\":\"attachment\",\"name\":\"report.txt\",\"path\":\"/safe/report.txt\"}]}},{\"kind\":\"block-update\",\"messageId\":\"a1\",\"blockId\":\"text-1\",\"target\":\"block\",\"details\":{\"text\":\"最终修正🙂\",\"isComplete\":true}},{\"kind\":\"message-update\",\"messageId\":\"a1\",\"details\":{\"sdkUuid\":\"native-uuid\",\"transcriptState\":\"complete\"}},{\"kind\":\"message-update\",\"messageId\":\"a1\",\"details\":{\"usage\":{\"inputTokens\":9,\"outputTokens\":3}},\"clear\":[\"sdkUuid\"]},{\"kind\":\"content-confirm\",\"messageId\":\"a2\",\"content\":[{\"id\":\"text-2\",\"type\":\"text\",\"text\":\"完整消息\",\"isComplete\":true}]},{\"kind\":\"block-upsert\",\"messageId\":\"a2\",\"block\":{\"id\":\"retracted\",\"type\":\"thinking\",\"thinking\":\"撤回内容\"}},{\"kind\":\"blocks-remove\",\"messageId\":\"a2\",\"blockIds\":[\"retracted\"]},{\"kind\":\"turn-update\",\"turn\":{\"id\":\"t1\",\"rootUserMessageId\":\"u1\",\"startedAt\":\"2026-09-12T00:00:00.000Z\",\"status\":\"complete\",\"usage\":{\"inputTokens\":9,\"outputTokens\":3},\"durationMs\":80}}]},\"checksum\":\"679aa69d5a55d17d3286a0896061f4378ebe9a7f29334fe448d1bd2514922e49\"}\n",
+      "expected": {
+        "messages": [
+          {
+            "id": "u1",
+            "role": "user",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": "第一条问题🙂",
+            "turnId": "t1"
+          },
+          {
+            "id": "a1",
+            "role": "assistant",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": [
+              {
+                "id": "text-1",
+                "type": "text",
+                "text": "最终修正🙂",
+                "isComplete": true
+              },
+              {
+                "id": "tool-block",
+                "type": "tool_use",
+                "tool": {
+                  "id": "tool-1",
+                  "name": "Task",
+                  "input": {},
+                  "inputJson": "{\"q\":\"中文🙂\"}",
+                  "isLoading": true,
+                  "inputComplete": true,
+                  "subagentCalls": [
+                    {
+                      "id": "nested-1",
+                      "name": "Read",
+                      "input": {},
+                      "inputJson": "",
+                      "result": "晚到工具结果🙂",
+                      "isLoading": false,
+                      "attachments": [
+                        {
+                          "id": "attachment",
+                          "name": "report.txt",
+                          "path": "/safe/report.txt"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            ],
+            "turnId": "t1",
+            "transcriptState": "complete",
+            "usage": {
+              "inputTokens": 9,
+              "outputTokens": 3
+            }
+          },
+          {
+            "id": "u2",
+            "role": "user",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": "第二条插话",
+            "turnId": "t1"
+          },
+          {
+            "id": "a2",
+            "role": "assistant",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": [
+              {
+                "id": "text-2",
+                "type": "text",
+                "text": "完整消息",
+                "isComplete": true
+              }
+            ],
+            "turnId": "t1",
+            "transcriptState": "streaming"
+          }
+        ],
+        "turns": [
+          {
+            "id": "t1",
+            "rootUserMessageId": "u1",
+            "startedAt": "2026-09-12T00:00:00.000Z",
+            "status": "complete",
+            "usage": {
+              "inputTokens": 9,
+              "outputTokens": 3
+            },
+            "durationMs": 80
+          }
+        ],
+        "revision": 18,
+        "lastBatchId": "b2",
+        "validBytes": 3028,
+        "tail": "clean"
+      }
+    },
+    {
+      "name": "remove-and-recreate-insertion-order",
+      "wire": "{\"kind\":\"session-transcript\",\"version\":2,\"sessionId\":\"fixture-session\",\"generation\":\"g1\",\"baseRevision\":0,\"baseline\":false}\n{\"batch\":{\"id\":\"b1\",\"mode\":\"delta\",\"fromRevision\":1,\"revision\":3,\"operations\":[{\"kind\":\"message-create\",\"message\":{\"id\":\"u1\",\"role\":\"user\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":\"第一条问题🙂\",\"turnId\":\"t1\"}},{\"kind\":\"turn-update\",\"turn\":{\"id\":\"t1\",\"rootUserMessageId\":\"u1\",\"startedAt\":\"2026-09-12T00:00:00.000Z\",\"status\":\"running\"}},{\"kind\":\"message-create\",\"message\":{\"id\":\"a1\",\"role\":\"assistant\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":[{\"id\":\"text-1\",\"type\":\"text\",\"text\":\"开头🙂\"}],\"turnId\":\"t1\",\"transcriptState\":\"streaming\"}}]},\"checksum\":\"5960b7ae4c97f10b718061e08dc1848ae7400048840970d6d834e1f49e8c7965\"}\n{\"batch\":{\"id\":\"b2\",\"mode\":\"delta\",\"fromRevision\":4,\"revision\":6,\"operations\":[{\"kind\":\"messages-remove\",\"messageIds\":[\"u1\",\"a1\"]},{\"kind\":\"message-create\",\"message\":{\"id\":\"a1\",\"role\":\"assistant\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":\"replacement\"}},{\"kind\":\"message-create\",\"message\":{\"id\":\"u1\",\"role\":\"user\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":\"new root\"}}]},\"checksum\":\"585d15ff8ff262b925b582344899861fe979ab2252962dcb92468c40866b7db4\"}\n",
+      "expected": {
+        "messages": [
+          {
+            "id": "a1",
+            "role": "assistant",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": "replacement"
+          },
+          {
+            "id": "u1",
+            "role": "user",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": "new root"
+          }
+        ],
+        "turns": [],
+        "revision": 6,
+        "lastBatchId": "b2",
+        "validBytes": 1232,
+        "tail": "clean"
+      }
+    },
+    {
+      "name": "unfinished-baseline",
+      "wire": "{\"kind\":\"session-transcript\",\"version\":2,\"sessionId\":\"fixture-session\",\"generation\":\"g2\",\"baseRevision\":17,\"baseline\":true,\"sourceGeneration\":\"g1\"}\n{\"batch\":{\"id\":\"base-1\",\"mode\":\"baseline\",\"fromRevision\":0,\"revision\":17,\"operations\":[{\"kind\":\"message-create\",\"message\":{\"id\":\"u1\",\"role\":\"user\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":\"第一条问题🙂\",\"turnId\":\"t1\"}}]},\"checksum\":\"96bc6f3217542545faea726bcc6079c98bdfcb017a5cf90d362d3b8f462759af\"}\n",
+      "error": true
+    },
+    {
+      "name": "completed-baseline",
+      "wire": "{\"kind\":\"session-transcript\",\"version\":2,\"sessionId\":\"fixture-session\",\"generation\":\"g2\",\"baseRevision\":17,\"baseline\":true,\"sourceGeneration\":\"g1\"}\n{\"batch\":{\"id\":\"base-1\",\"mode\":\"baseline\",\"fromRevision\":0,\"revision\":17,\"operations\":[{\"kind\":\"message-create\",\"message\":{\"id\":\"u1\",\"role\":\"user\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":\"第一条问题🙂\",\"turnId\":\"t1\"}}]},\"checksum\":\"96bc6f3217542545faea726bcc6079c98bdfcb017a5cf90d362d3b8f462759af\"}\n{\"batch\":{\"id\":\"base-2\",\"mode\":\"baseline\",\"fromRevision\":0,\"revision\":17,\"operations\":[{\"kind\":\"message-create\",\"message\":{\"id\":\"a1\",\"role\":\"assistant\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":[{\"id\":\"text-1\",\"type\":\"text\",\"text\":\"开头🙂\"}],\"turnId\":\"t1\",\"transcriptState\":\"streaming\"}}],\"baselineEnd\":true},\"checksum\":\"0b25ebc4b8a0de8c1b434b5fefc15003e050fc4b31d36c0bb4d4cf9248772c6d\"}\n",
+      "expected": {
+        "messages": [
+          {
+            "id": "u1",
+            "role": "user",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": "第一条问题🙂",
+            "turnId": "t1"
+          },
+          {
+            "id": "a1",
+            "role": "assistant",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": [
+              {
+                "id": "text-1",
+                "type": "text",
+                "text": "开头🙂"
+              }
+            ],
+            "turnId": "t1",
+            "transcriptState": "streaming"
+          }
+        ],
+        "turns": [],
+        "revision": 17,
+        "lastBatchId": "base-2",
+        "validBytes": 862,
+        "tail": "clean"
+      }
+    },
+    {
+      "name": "baseline-then-delta",
+      "wire": "{\"kind\":\"session-transcript\",\"version\":2,\"sessionId\":\"fixture-session\",\"generation\":\"g2\",\"baseRevision\":17,\"baseline\":true,\"sourceGeneration\":\"g1\"}\n{\"batch\":{\"id\":\"base-1\",\"mode\":\"baseline\",\"fromRevision\":0,\"revision\":17,\"operations\":[{\"kind\":\"message-create\",\"message\":{\"id\":\"u1\",\"role\":\"user\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":\"第一条问题🙂\",\"turnId\":\"t1\"}}]},\"checksum\":\"96bc6f3217542545faea726bcc6079c98bdfcb017a5cf90d362d3b8f462759af\"}\n{\"batch\":{\"id\":\"base-2\",\"mode\":\"baseline\",\"fromRevision\":0,\"revision\":17,\"operations\":[{\"kind\":\"message-create\",\"message\":{\"id\":\"a1\",\"role\":\"assistant\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":[{\"id\":\"text-1\",\"type\":\"text\",\"text\":\"开头🙂\"}],\"turnId\":\"t1\",\"transcriptState\":\"streaming\"}}],\"baselineEnd\":true},\"checksum\":\"0b25ebc4b8a0de8c1b434b5fefc15003e050fc4b31d36c0bb4d4cf9248772c6d\"}\n{\"batch\":{\"id\":\"b18\",\"mode\":\"delta\",\"fromRevision\":18,\"revision\":18,\"operations\":[{\"kind\":\"text-append\",\"messageId\":\"a1\",\"field\":\"text\",\"offset\":4,\"text\":\"继续\",\"blockId\":\"text-1\"}]},\"checksum\":\"701a7a6de0ecad41157b796a4f774850b197729bfe721e0eedf1ec8c7befc14d\"}\n",
+      "expected": {
+        "messages": [
+          {
+            "id": "u1",
+            "role": "user",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": "第一条问题🙂",
+            "turnId": "t1"
+          },
+          {
+            "id": "a1",
+            "role": "assistant",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": [
+              {
+                "id": "text-1",
+                "type": "text",
+                "text": "开头🙂继续"
+              }
+            ],
+            "turnId": "t1",
+            "transcriptState": "streaming"
+          }
+        ],
+        "turns": [],
+        "revision": 18,
+        "lastBatchId": "b18",
+        "validBytes": 1126,
+        "tail": "clean"
+      }
+    },
+    {
+      "name": "wrong-session",
+      "wire": "{\"kind\":\"session-transcript\",\"version\":2,\"sessionId\":\"another-session\",\"generation\":\"g1\",\"baseRevision\":0,\"baseline\":false}\n{\"batch\":{\"id\":\"b1\",\"mode\":\"delta\",\"fromRevision\":1,\"revision\":3,\"operations\":[{\"kind\":\"message-create\",\"message\":{\"id\":\"u1\",\"role\":\"user\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":\"第一条问题🙂\",\"turnId\":\"t1\"}},{\"kind\":\"turn-update\",\"turn\":{\"id\":\"t1\",\"rootUserMessageId\":\"u1\",\"startedAt\":\"2026-09-12T00:00:00.000Z\",\"status\":\"running\"}},{\"kind\":\"message-create\",\"message\":{\"id\":\"a1\",\"role\":\"assistant\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":[{\"id\":\"text-1\",\"type\":\"text\",\"text\":\"开头🙂\"}],\"turnId\":\"t1\",\"transcriptState\":\"streaming\"}}]},\"checksum\":\"5960b7ae4c97f10b718061e08dc1848ae7400048840970d6d834e1f49e8c7965\"}\n",
+      "error": true
+    },
+    {
+      "name": "unknown-version",
+      "wire": "{\"kind\":\"session-transcript\",\"version\":3,\"sessionId\":\"fixture-session\",\"generation\":\"g1\",\"baseRevision\":0,\"baseline\":false}\n{\"batch\":{\"id\":\"b1\",\"mode\":\"delta\",\"fromRevision\":1,\"revision\":3,\"operations\":[{\"kind\":\"message-create\",\"message\":{\"id\":\"u1\",\"role\":\"user\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":\"第一条问题🙂\",\"turnId\":\"t1\"}},{\"kind\":\"turn-update\",\"turn\":{\"id\":\"t1\",\"rootUserMessageId\":\"u1\",\"startedAt\":\"2026-09-12T00:00:00.000Z\",\"status\":\"running\"}},{\"kind\":\"message-create\",\"message\":{\"id\":\"a1\",\"role\":\"assistant\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":[{\"id\":\"text-1\",\"type\":\"text\",\"text\":\"开头🙂\"}],\"turnId\":\"t1\",\"transcriptState\":\"streaming\"}}]},\"checksum\":\"5960b7ae4c97f10b718061e08dc1848ae7400048840970d6d834e1f49e8c7965\"}\n",
+      "error": true
+    },
+    {
+      "name": "incomplete-header",
+      "wire": "{\"kind\":\"session-transcript\",\"version\":2,\"sessionId\":\"fixture-session\",\"generation\":\"g1\",\"baseRevision\":0,\"baseline\":false}",
+      "error": true
+    },
+    {
+      "name": "raw-batch-checksum",
+      "wire": "{\"kind\":\"session-transcript\",\"version\":2,\"sessionId\":\"fixture-session\",\"generation\":\"g1\",\"baseRevision\":0,\"baseline\":false}\n{\"batch\":{\"id\":\"b1\",\"mode\":\"delta\",\"fromRevision\":1,\"revision\":3,\"operations\":[{\"kind\":\"message-create\",\"message\":{\"id\":\"u1\",\"role\":\"user\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":\"第一条问题🙂\",\"turnId\":\"t1\"}},{\"kind\":\"turn-update\",\"turn\":{\"id\":\"t1\",\"rootUserMessageId\":\"u1\",\"startedAt\":\"2026-09-12T00:00:00.000Z\",\"status\":\"running\"}},{\"kind\":\"message-create\",\"message\":{\"id\":\"a1\",\"role\":\"assistant\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":[{\"id\":\"text-1\",\"type\":\"text\",\"text\":\"开头🙂\"}],\"turnId\":\"t1\",\"transcriptState\":\"streaming\"}}]},\"checksum\":\"5960b7ae4c97f10b718061e08dc1848ae7400048840970d6d834e1f49e8c7965\"}\n{\"batch\":{\"operations\": [], \"revision\": 4, \"fromRevision\": 4, \"mode\": \"delta\", \"id\": \"raw\"},\"checksum\":\"a5d7154b89588ea50149f0a034fc97e2e141a9f1f111b3d95c06b3c4a0e85dd7\"}\n",
+      "expected": {
+        "messages": [
+          {
+            "id": "u1",
+            "role": "user",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": "第一条问题🙂",
+            "turnId": "t1"
+          },
+          {
+            "id": "a1",
+            "role": "assistant",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": [
+              {
+                "id": "text-1",
+                "type": "text",
+                "text": "开头🙂"
+              }
+            ],
+            "turnId": "t1",
+            "transcriptState": "streaming"
+          }
+        ],
+        "turns": [
+          {
+            "id": "t1",
+            "rootUserMessageId": "u1",
+            "startedAt": "2026-09-12T00:00:00.000Z",
+            "status": "running"
+          }
+        ],
+        "revision": 4,
+        "lastBatchId": "raw",
+        "validBytes": 939,
+        "tail": "clean"
+      }
+    },
+    {
+      "name": "nested-retraction-preserves-root",
+      "wire": "{\"kind\":\"session-transcript\",\"version\":2,\"sessionId\":\"fixture-session\",\"generation\":\"g1\",\"baseRevision\":0,\"baseline\":false}\n{\"batch\":{\"id\":\"b1\",\"mode\":\"delta\",\"fromRevision\":1,\"revision\":3,\"operations\":[{\"kind\":\"message-create\",\"message\":{\"id\":\"u1\",\"role\":\"user\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":\"第一条问题🙂\",\"turnId\":\"t1\"}},{\"kind\":\"turn-update\",\"turn\":{\"id\":\"t1\",\"rootUserMessageId\":\"u1\",\"startedAt\":\"2026-09-12T00:00:00.000Z\",\"status\":\"running\"}},{\"kind\":\"message-create\",\"message\":{\"id\":\"a1\",\"role\":\"assistant\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":[{\"id\":\"text-1\",\"type\":\"text\",\"text\":\"开头🙂\"}],\"turnId\":\"t1\",\"transcriptState\":\"streaming\"}}]},\"checksum\":\"5960b7ae4c97f10b718061e08dc1848ae7400048840970d6d834e1f49e8c7965\"}\n{\"batch\":{\"id\":\"b2\",\"mode\":\"delta\",\"fromRevision\":4,\"revision\":18,\"operations\":[{\"kind\":\"block-upsert\",\"messageId\":\"a1\",\"block\":{\"id\":\"tool-block\",\"type\":\"tool_use\",\"tool\":{\"id\":\"tool-1\",\"name\":\"Task\",\"input\":{},\"inputJson\":\"\",\"isLoading\":true}}},{\"kind\":\"subagent-upsert\",\"messageId\":\"a1\",\"blockId\":\"tool-block\",\"call\":{\"id\":\"nested-1\",\"name\":\"Read\",\"input\":{},\"inputJson\":\"\",\"result\":\"\",\"isLoading\":true}},{\"kind\":\"message-create\",\"message\":{\"id\":\"u2\",\"role\":\"user\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":\"第二条插话\",\"turnId\":\"t1\"}},{\"kind\":\"message-create\",\"message\":{\"id\":\"a2\",\"role\":\"assistant\",\"timestamp\":\"2026-09-12T00:00:00.000Z\",\"content\":\"新段\",\"turnId\":\"t1\",\"transcriptState\":\"streaming\"}},{\"kind\":\"text-append\",\"messageId\":\"a1\",\"field\":\"inputJson\",\"offset\":0,\"text\":\"{\\\"q\\\":\\\"中文🙂\\\"}\",\"blockId\":\"tool-block\"},{\"kind\":\"block-update\",\"messageId\":\"a1\",\"blockId\":\"tool-block\",\"target\":\"tool\",\"details\":{\"inputComplete\":true}},{\"kind\":\"text-append\",\"messageId\":\"a1\",\"field\":\"result\",\"offset\":0,\"text\":\"晚到工具结果🙂\",\"blockId\":\"tool-block\",\"subagentToolId\":\"nested-1\"},{\"kind\":\"block-update\",\"messageId\":\"a1\",\"blockId\":\"tool-block\",\"target\":\"tool\",\"subagentToolId\":\"nested-1\",\"details\":{\"isLoading\":false,\"attachments\":[{\"id\":\"attachment\",\"name\":\"report.txt\",\"path\":\"/safe/report.txt\"}]}},{\"kind\":\"block-update\",\"messageId\":\"a1\",\"blockId\":\"text-1\",\"target\":\"block\",\"details\":{\"text\":\"最终修正🙂\",\"isComplete\":true}},{\"kind\":\"message-update\",\"messageId\":\"a1\",\"details\":{\"sdkUuid\":\"native-uuid\",\"transcriptState\":\"complete\"}},{\"kind\":\"message-update\",\"messageId\":\"a1\",\"details\":{\"usage\":{\"inputTokens\":9,\"outputTokens\":3}},\"clear\":[\"sdkUuid\"]},{\"kind\":\"content-confirm\",\"messageId\":\"a2\",\"content\":[{\"id\":\"text-2\",\"type\":\"text\",\"text\":\"完整消息\",\"isComplete\":true}]},{\"kind\":\"block-upsert\",\"messageId\":\"a2\",\"block\":{\"id\":\"retracted\",\"type\":\"thinking\",\"thinking\":\"撤回内容\"}},{\"kind\":\"blocks-remove\",\"messageId\":\"a2\",\"blockIds\":[\"retracted\"]},{\"kind\":\"turn-update\",\"turn\":{\"id\":\"t1\",\"rootUserMessageId\":\"u1\",\"startedAt\":\"2026-09-12T00:00:00.000Z\",\"status\":\"complete\",\"usage\":{\"inputTokens\":9,\"outputTokens\":3},\"durationMs\":80}}]},\"checksum\":\"679aa69d5a55d17d3286a0896061f4378ebe9a7f29334fe448d1bd2514922e49\"}\n{\"batch\":{\"id\":\"nested-remove\",\"mode\":\"delta\",\"fromRevision\":19,\"revision\":19,\"operations\":[{\"kind\":\"subagents-remove\",\"messageId\":\"a1\",\"blockId\":\"tool-block\",\"toolIds\":[\"nested-1\"]}]},\"checksum\":\"b62cec15d31c50fb97ee3653a1b70ed0307a26577cd26a5560f1e4a131305777\"}\n",
+      "expected": {
+        "messages": [
+          {
+            "id": "u1",
+            "role": "user",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": "第一条问题🙂",
+            "turnId": "t1"
+          },
+          {
+            "id": "a1",
+            "role": "assistant",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": [
+              {
+                "id": "text-1",
+                "type": "text",
+                "text": "最终修正🙂",
+                "isComplete": true
+              },
+              {
+                "id": "tool-block",
+                "type": "tool_use",
+                "tool": {
+                  "id": "tool-1",
+                  "name": "Task",
+                  "input": {},
+                  "inputJson": "{\"q\":\"中文🙂\"}",
+                  "isLoading": true,
+                  "inputComplete": true,
+                  "subagentCalls": []
+                }
+              }
+            ],
+            "turnId": "t1",
+            "transcriptState": "complete",
+            "usage": {
+              "inputTokens": 9,
+              "outputTokens": 3
+            }
+          },
+          {
+            "id": "u2",
+            "role": "user",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": "第二条插话",
+            "turnId": "t1"
+          },
+          {
+            "id": "a2",
+            "role": "assistant",
+            "timestamp": "2026-09-12T00:00:00.000Z",
+            "content": [
+              {
+                "id": "text-2",
+                "type": "text",
+                "text": "完整消息",
+                "isComplete": true
+              }
+            ],
+            "turnId": "t1",
+            "transcriptState": "streaming"
+          }
+        ],
+        "turns": [
+          {
+            "id": "t1",
+            "rootUserMessageId": "u1",
+            "startedAt": "2026-09-12T00:00:00.000Z",
+            "status": "complete",
+            "usage": {
+              "inputTokens": 9,
+              "outputTokens": 3
+            },
+            "durationMs": 80
+          }
+        ],
+        "revision": 19,
+        "lastBatchId": "nested-remove",
+        "validBytes": 3292,
+        "tail": "clean"
+      }
+    }
+  ],
+  "formats": [
+    {
+      "metadata": {},
+      "legacyFileExists": false,
+      "v2FileExists": false,
+      "expected": "legacy"
+    },
+    {
+      "metadata": {},
+      "legacyFileExists": false,
+      "v2FileExists": true,
+      "expected": "conflict"
+    },
+    {
+      "metadata": {},
+      "legacyFileExists": true,
+      "v2FileExists": false,
+      "expected": "legacy"
+    },
+    {
+      "metadata": {},
+      "legacyFileExists": true,
+      "v2FileExists": true,
+      "expected": "conflict"
+    },
+    {
+      "metadata": {
+        "transcriptFormat": null
+      },
+      "legacyFileExists": false,
+      "v2FileExists": false,
+      "expected": "unsupported"
+    },
+    {
+      "metadata": {
+        "transcriptFormat": null
+      },
+      "legacyFileExists": false,
+      "v2FileExists": true,
+      "expected": "unsupported"
+    },
+    {
+      "metadata": {
+        "transcriptFormat": null
+      },
+      "legacyFileExists": true,
+      "v2FileExists": false,
+      "expected": "unsupported"
+    },
+    {
+      "metadata": {
+        "transcriptFormat": null
+      },
+      "legacyFileExists": true,
+      "v2FileExists": true,
+      "expected": "unsupported"
+    },
+    {
+      "metadata": {
+        "transcriptFormat": "2"
+      },
+      "legacyFileExists": false,
+      "v2FileExists": false,
+      "expected": "unsupported"
+    },
+    {
+      "metadata": {
+        "transcriptFormat": "2"
+      },
+      "legacyFileExists": false,
+      "v2FileExists": true,
+      "expected": "unsupported"
+    },
+    {
+      "metadata": {
+        "transcriptFormat": "2"
+      },
+      "legacyFileExists": true,
+      "v2FileExists": false,
+      "expected": "unsupported"
+    },
+    {
+      "metadata": {
+        "transcriptFormat": "2"
+      },
+      "legacyFileExists": true,
+      "v2FileExists": true,
+      "expected": "unsupported"
+    },
+    {
+      "metadata": {
+        "transcriptFormat": 2
+      },
+      "legacyFileExists": false,
+      "v2FileExists": false,
+      "expected": "v2"
+    },
+    {
+      "metadata": {
+        "transcriptFormat": 2
+      },
+      "legacyFileExists": false,
+      "v2FileExists": true,
+      "expected": "v2"
+    },
+    {
+      "metadata": {
+        "transcriptFormat": 2
+      },
+      "legacyFileExists": true,
+      "v2FileExists": false,
+      "expected": "conflict"
+    },
+    {
+      "metadata": {
+        "transcriptFormat": 2
+      },
+      "legacyFileExists": true,
+      "v2FileExists": true,
+      "expected": "conflict"
+    },
+    {
+      "metadata": {
+        "transcriptFormat": 3
+      },
+      "legacyFileExists": false,
+      "v2FileExists": false,
+      "expected": "unsupported"
+    },
+    {
+      "metadata": {
+        "transcriptFormat": 3
+      },
+      "legacyFileExists": false,
+      "v2FileExists": true,
+      "expected": "unsupported"
+    },
+    {
+      "metadata": {
+        "transcriptFormat": 3
+      },
+      "legacyFileExists": true,
+      "v2FileExists": false,
+      "expected": "unsupported"
+    },
+    {
+      "metadata": {
+        "transcriptFormat": 3
+      },
+      "legacyFileExists": true,
+      "v2FileExists": true,
+      "expected": "unsupported"
+    },
+    {
+      "legacyFileExists": true,
+      "v2FileExists": true,
+      "expected": "unindexed"
+    }
+  ]
+}

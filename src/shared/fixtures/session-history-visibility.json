@@ -1,0 +1,83 @@
+{
+  "base": {
+    "id": "qa-managed-empty",
+    "agentDir": "/tmp/visibility-workspace",
+    "title": "New Chat",
+    "createdAt": "2026-09-13T00:00:00.000Z",
+    "lastActiveAt": "2026-09-13T00:00:00.000Z",
+    "runtime": "codex",
+    "runtimeSource": "managed-provider",
+    "providerId": "codex-sub",
+    "model": "gpt-5.6-sol",
+    "origin": {
+      "kind": "desktop",
+      "surface": "session_fork"
+    },
+    "stats": {
+      "messageCount": 0,
+      "totalInputTokens": 0,
+      "totalOutputTokens": 0
+    }
+  },
+  "cases": [
+    {
+      "name": "legacy empty draft",
+      "patch": {},
+      "visible": false
+    },
+    {
+      "name": "committed V2 empty birth",
+      "patch": {
+        "transcriptFormat": 2
+      },
+      "visible": true
+    },
+    {
+      "name": "prepared V2 birth",
+      "patch": {
+        "transcriptFormat": 2,
+        "materializationState": "prepared"
+      },
+      "visible": false
+    },
+    {
+      "name": "V2 system maintenance",
+      "patch": {
+        "transcriptFormat": 2,
+        "systemMaintenanceKind": "memory_gardener"
+      },
+      "visible": false
+    },
+    {
+      "name": "legacy favorite",
+      "patch": {
+        "favorite": true
+      },
+      "visible": true
+    },
+    {
+      "name": "legacy channel",
+      "patch": {
+        "origin": {
+          "kind": "agent-channel",
+          "surface": "channel_message"
+        }
+      },
+      "visible": true
+    },
+    {
+      "name": "versioned runtime-backed identity",
+      "patch": {
+        "transcriptFormat": 2,
+        "providerExecutionIdentity": {
+          "kind": "runtime-backed-provider",
+          "providerId": "codex-sub",
+          "runtime": "codex",
+          "runtimeSource": "managed-provider",
+          "model": "gpt-5.6-sol"
+        }
+      },
+      "visible": true
+    }
+  ]
+}

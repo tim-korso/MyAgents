@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "mino-terminal-cube",
+  "displayName": "Mino Terminal Cube",
+  "description": "Terminal-screen creature for the direct hacker-workbench direction.",
+  "author": "MyAgents / image-gen reference / deterministic hatch-pet repair",
+  "license": "Candidate asset - internal review before distribution",
+  "spritesheetPath": "spritesheet.webp"
+}

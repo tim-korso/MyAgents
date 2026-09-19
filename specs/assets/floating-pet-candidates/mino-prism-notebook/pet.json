@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "mino-prism-notebook",
+  "displayName": "Mino Prism Notebook",
+  "description": "Notebook-prism hybrid for memory plus judgment.",
+  "author": "MyAgents / image-gen reference / deterministic hatch-pet repair",
+  "license": "Candidate asset - internal review before distribution",
+  "spritesheetPath": "spritesheet.webp"
+}

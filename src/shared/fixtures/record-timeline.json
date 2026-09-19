@@ -1,0 +1,266 @@
+{
+  "schemaVersion": 1,
+  "valid": [
+    {
+      "name": "start offset and known 1000ppm source drift",
+      "timeline": {
+        "spans": [
+          {
+            "sourceStart": 0,
+            "sourceEnd": 32000,
+            "recordStart": 16000,
+            "recordEnd": 48032,
+            "quality": "clock",
+            "discontinuity": false
+          }
+        ]
+      },
+      "points": [
+        {
+          "recordSample": 0,
+          "sourceSample": null,
+          "audible": false
+        },
+        {
+          "recordSample": 15999,
+          "sourceSample": null,
+          "audible": false
+        },
+        {
+          "recordSample": 16000,
+          "sourceSample": 0,
+          "audible": true
+        },
+        {
+          "recordSample": 16001,
+          "sourceSample": 0,
+          "audible": true
+        },
+        {
+          "recordSample": 32016,
+          "sourceSample": 16000,
+          "audible": true
+        },
+        {
+          "recordSample": 48031,
+          "sourceSample": 31999,
+          "audible": true
+        },
+        {
+          "recordSample": 48032,
+          "sourceSample": 32000,
+          "audible": false
+        },
+        {
+          "recordSample": 48033,
+          "sourceSample": null,
+          "audible": false
+        }
+      ]
+    },
+    {
+      "name": "archive gap, missing Record time, and resumed estimated capture",
+      "timeline": {
+        "spans": [
+          {
+            "sourceStart": 0,
+            "sourceEnd": 16000,
+            "recordStart": 0,
+            "recordEnd": 16000,
+            "quality": "clock",
+            "discontinuity": false
+          },
+          {
+            "sourceStart": 16000,
+            "sourceEnd": 32000,
+            "recordStart": 16000,
+            "recordEnd": 32000,
+            "quality": "gap",
+            "discontinuity": true
+          },
+          {
+            "sourceStart": 32000,
+            "sourceEnd": 64000,
+            "recordStart": 48000,
+            "recordEnd": 80000,
+            "quality": "estimated",
+            "discontinuity": true
+          }
+        ]
+      },
+      "points": [
+        {
+          "recordSample": 15999,
+          "sourceSample": 15999,
+          "audible": true
+        },
+        {
+          "recordSample": 16000,
+          "sourceSample": null,
+          "audible": false
+        },
+        {
+          "recordSample": 24000,
+          "sourceSample": null,
+          "audible": false
+        },
+        {
+          "recordSample": 32000,
+          "sourceSample": null,
+          "audible": false
+        },
+        {
+          "recordSample": 47999,
+          "sourceSample": null,
+          "audible": false
+        },
+        {
+          "recordSample": 48000,
+          "sourceSample": 32000,
+          "audible": true
+        },
+        {
+          "recordSample": 80000,
+          "sourceSample": 64000,
+          "audible": false
+        }
+      ]
+    },
+    {
+      "name": "eight-hour capture bound with an adjacent pause epoch",
+      "timeline": {
+        "spans": [
+          {
+            "sourceStart": 0,
+            "sourceEnd": 230400000,
+            "recordStart": 0,
+            "recordEnd": 230400000,
+            "quality": "clock",
+            "discontinuity": false
+          },
+          {
+            "sourceStart": 230400000,
+            "sourceEnd": 460800000,
+            "recordStart": 230400000,
+            "recordEnd": 460800000,
+            "quality": "clock",
+            "discontinuity": true
+          }
+        ]
+      },
+      "points": [
+        {
+          "recordSample": 230399999,
+          "sourceSample": 230399999,
+          "audible": true
+        },
+        {
+          "recordSample": 230400000,
+          "sourceSample": 230400000,
+          "audible": true
+        },
+        {
+          "recordSample": 460799999,
+          "sourceSample": 460799999,
+          "audible": true
+        },
+        {
+          "recordSample": 460800000,
+          "sourceSample": 460800000,
+          "audible": false
+        }
+      ]
+    }
+  ],
+  "invalid": [
+    {
+      "name": "empty",
+      "timeline": {
+        "spans": []
+      }
+    },
+    {
+      "name": "implicit source hole",
+      "timeline": {
+        "spans": [
+          {
+            "sourceStart": 1,
+            "sourceEnd": 100,
+            "recordStart": 0,
+            "recordEnd": 99,
+            "quality": "clock",
+            "discontinuity": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "overlapping Record clock",
+      "timeline": {
+        "spans": [
+          {
+            "sourceStart": 0,
+            "sourceEnd": 100,
+            "recordStart": 0,
+            "recordEnd": 100,
+            "quality": "clock",
+            "discontinuity": false
+          },
+          {
+            "sourceStart": 100,
+            "sourceEnd": 200,
+            "recordStart": 99,
+            "recordEnd": 199,
+            "quality": "clock",
+            "discontinuity": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "empty source extent",
+      "timeline": {
+        "spans": [
+          {
+            "sourceStart": 0,
+            "sourceEnd": 0,
+            "recordStart": 0,
+            "recordEnd": 1,
+            "quality": "clock",
+            "discontinuity": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "empty Record extent",
+      "timeline": {
+        "spans": [
+          {
+            "sourceStart": 0,
+            "sourceEnd": 1,
+            "recordStart": 0,
+            "recordEnd": 0,
+            "quality": "clock",
+            "discontinuity": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "beyond eight-hour limit",
+      "timeline": {
+        "spans": [
+          {
+            "sourceStart": 0,
+            "sourceEnd": 460800001,
+            "recordStart": 0,
+            "recordEnd": 460800001,
+            "quality": "clock",
+            "discontinuity": false
+          }
+        ]
+      }
+    }
+  ]
+}

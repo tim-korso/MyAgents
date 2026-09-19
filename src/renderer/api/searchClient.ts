@@ -1,0 +1,170 @@
+/**
+ * searchClient.ts — Search API abstraction layer.
+ *
+ * Search is a Tauri-only feature. It calls the Rust `SearchEngine` directly
+ * via Tauri IPC — there is no Node Sidecar path. Browser dev mode
+ * (`start_dev.sh`) does not ship a search fallback; the UI entry points are
+ * gated so the buttons don't appear outside Tauri.
+ */
+
+import { invoke } from '@tauri-apps/api/core';
+import type { SessionMetadata } from './sessionClient';
+
+// ── Types ──────────────────────────────────────────────────────────
+
+export interface SessionSearchResult {
+    queryId: string;
+    nextCursor: number | null;
+    removedSessionIds: string[];
+    hits: SessionSearchHit[];
+    totalCount: number;
+    queryTimeMs: number;
+}
+
+export interface SessionSearchHit {
+    session: SessionMetadata;
+    sessionId: string;
+    title: string;
+    agentDir: string;
+    score: number;
+    /** "title" or "content" */
+    matchType: string;
+    /** Context snippet for content matches */
+    snippet: string | null;
+    /** Highlight positions within the snippet: [[start, end], ...] */
+    snippetHighlights: [number, number][];
+    /** Highlight positions within the title: [[start, end], ...] */
+    titleHighlights: [number, number][];
+    /** "user" or "assistant" for content matches */
+    matchedRole: string | null;
+    lastActiveAt: string;
+    source: string | null;
+    turnCount: number | null;
+}
+
+export interface RecordSearchResult {
+    hits: RecordSearchHit[];
+    total: number;
+    queryTimeMs: number;
+}
+
+export interface RecordSearchHit {
+    recordId: string;
+    kind: 'text' | 'audio';
+    title: string;
+    snippet: string;
+    mediaMs: number | null;
+}
+
+export interface FileSearchResult {
+    folderHits: FolderSearchHit[];
+    hits: FileSearchHit[];
+    totalFolders: number;
+    totalFiles: number;
+    queryTimeMs: number;
+}
+
+export interface FolderSearchHit {
+    path: string;
+    name: string;
+}
+
+export interface FileSearchHit {
+    path: string;
+    name: string;
+    matchCount: number;
+    matches: FileMatchLine[];
+}
+
+export interface FileMatchLine {
+    lineNumber: number;
+    lineContent: string;
+    /** Highlight positions within lineContent: [[start, end], ...] */
+    highlights: [number, number][];
+}
+
+// ── API Functions ──────────────────────────────────────────────────
+
+/**
+ * Search session history (title + content).
+ * Global scope — searches across all workspaces.
+ */
+export interface SessionSearchRequest {
+    consumerId: string;
+    generation: number;
+    query: string;
+    tag: string | null;
+    workspaces: string[];
+}
+
+export function searchSessions(request: SessionSearchRequest): Promise<SessionSearchResult> {
+    return invoke<SessionSearchResult>('cmd_search_sessions', { request });
+}
+
+export function searchSessionPage(request: {
+    consumerId: string;
+    generation: number;
+    queryId: string;
+    cursor: number;
+}): Promise<SessionSearchResult> {
+    return invoke<SessionSearchResult>('cmd_search_session_page', { request });
+}
+
+export function closeSessionSearch(consumerId: string, generation: number): Promise<void> {
+    return invoke('cmd_close_session_search', { consumerId, generation });
+}
+
+/** Search canonical Records from the Rust-owned derived index. */
+export async function searchRecords(
+    query: string,
+    limit = 50,
+): Promise<RecordSearchResult> {
+    if (!query.trim()) {
+        return { hits: [], total: 0, queryTimeMs: 0 };
+    }
+    return invoke<RecordSearchResult>('cmd_search_records', { query, limit });
+}
+
+/**
+ * Search workspace files (name + content).
+ * Scoped to a specific workspace directory.
+ */
+export async function searchWorkspaceFiles(
+    query: string,
+    workspace: string,
+    limit = 50,
+    maxMatchesPerFile = 10,
+): Promise<FileSearchResult> {
+    if (!query.trim()) {
+        return { folderHits: [], hits: [], totalFolders: 0, totalFiles: 0, queryTimeMs: 0 };
+    }
+    return invoke<FileSearchResult>('cmd_search_workspace_files', {
+        query,
+        workspace,
+        limit,
+        maxMatchesPerFile,
+    });
+}
+
+/**
+ * Invalidate a workspace file index so it is rebuilt from scratch on the next
+ * search. Kept for hard resets (schema migration, corruption recovery).
+ */
+export async function invalidateWorkspaceFileIndex(workspace: string): Promise<void> {
+    return invoke('cmd_invalidate_workspace_index', { workspace });
+}
+
+/**
+ * Incrementally refresh a workspace file index against the current filesystem.
+ * Walks metadata only and re-indexes just the files whose mtime/size changed.
+ *
+ * Explicit refresh hook. Do not call this as background prewarm for ordinary
+ * tab opens or empty search mode: cold refreshes are heavy IO/CPU work. The
+ * file-search UI calls search first, then uses this as stale-while-revalidate
+ * follow-up work, or for an explicit user action.
+ *
+ * Returns `[totalFiles, changedFiles]`.
+ */
+export async function refreshWorkspaceFileIndex(workspace: string): Promise<[number, number]> {
+    return invoke<[number, number]>('cmd_refresh_workspace_index', { workspace });
+}

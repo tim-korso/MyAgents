@@ -1,0 +1,79 @@
+import { describe, it, expect } from 'vitest';
+
+import {
+    localDateStr,
+    sanitizeFileName,
+    exportHeader,
+    buildThinkingMarkdown,
+    buildReplyMarkdown,
+} from './markdownExport';
+
+// Fixed local-time clock: 2026-03-07 (single-digit month/day → tests zero-pad).
+const FIXED = new Date(2026, 2, 7, 9, 5, 0);
+
+describe('localDateStr', () => {
+    it('formats local date with zero-padded month/day', () => {
+        expect(localDateStr(FIXED)).toBe('2026-03-07');
+    });
+});
+
+describe('sanitizeFileName', () => {
+    it('replaces filesystem-unsafe characters with underscores', () => {
+        expect(sanitizeFileName('a/b\\c:d*e?f"g<h>i|j')).toBe('a_b_c_d_e_f_g_h_i_j');
+    });
+
+    it('collapses whitespace and trims', () => {
+        expect(sanitizeFileName('  hello   world  ')).toBe('hello world');
+    });
+
+    it('caps length to maxLen', () => {
+        expect(sanitizeFileName('x'.repeat(100), 10)).toBe('x'.repeat(10));
+    });
+
+    it('falls back to untitled when nothing survives', () => {
+        expect(sanitizeFileName('   ')).toBe('untitled');
+        expect(sanitizeFileName('')).toBe('untitled');
+    });
+
+    it('strips ASCII control characters', () => {
+        expect(sanitizeFileName('a\x00b\x1fc')).toBe('abc');
+        expect(sanitizeFileName('\x01\x02\x03')).toBe('untitled');
+    });
+
+    it('trims leading/trailing dots so the name is not hidden or .. -like', () => {
+        expect(sanitizeFileName('..hidden')).toBe('hidden');
+        expect(sanitizeFileName('name...')).toBe('name');
+        expect(sanitizeFileName('..')).toBe('untitled');
+    });
+
+    it('preserves unicode (non-latin) characters', () => {
+        expect(sanitizeFileName('思考过程')).toBe('思考过程');
+    });
+});
+
+describe('buildThinkingMarkdown', () => {
+    it('wraps thinking with header + provenance and trims body', () => {
+        const md = buildThinkingMarkdown('  reasoning text  ', FIXED);
+        expect(md).toBe(
+            [
+                exportHeader('2026-03-07'),
+                '<!-- AI 思考过程 / Chain of Thought -->',
+                '',
+                'reasoning text',
+                '',
+            ].join('\n'),
+        );
+    });
+
+    it('preserves internal markdown structure', () => {
+        const md = buildThinkingMarkdown('# Title\n\n- a\n- b', FIXED);
+        expect(md).toContain('# Title\n\n- a\n- b');
+    });
+});
+
+describe('buildReplyMarkdown', () => {
+    it('wraps reply with header and trims body', () => {
+        const md = buildReplyMarkdown('  hello  ', FIXED);
+        expect(md).toBe([exportHeader('2026-03-07'), '', 'hello', ''].join('\n'));
+    });
+});

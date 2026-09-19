@@ -1,0 +1,110 @@
+name: Ubuntu 24.04 x64 build
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/linux-package.yml'
+      - 'setup.sh'
+      - 'build_linux.sh'
+      - 'build_dev_linux.sh'
+      - 'src-tauri/tauri.linux.conf.json'
+      - 'scripts/linux-package*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ubuntu-package-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      # The scripts read rust-toolchain.toml; no second toolchain version here.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            src-tauri
+            src-tauri/document-worker
+            src-tauri/media-worker
+      - name: Set up through the developer entry point
+        run: ./setup.sh
+      - name: Check build contracts
+        run: |
+          npm run test:linux-package
+          npx vitest run --project unit src/renderer/config/platformProviderSettings.test.ts \
+            --project dom src/renderer/config/ConfigProvider.managedCodex.test.tsx \
+            src/renderer/hooks/useCliProxyStatus.test.tsx src/renderer/hooks/useUpdater.test.tsx \
+            src/renderer/pages/settings/SettingsPage.linux.dom.test.tsx
+      - name: Build the runnable development version
+        run: ./build_dev_linux.sh --build-only
+      - name: Verify development startup
+        run: |
+          sudo apt-get install -y --no-install-recommends python3 dbus-x11 xvfb xauth
+          dbus-run-session -- xvfb-run -a python3 scripts/linux-package-smoke.py \
+            --app src-tauri/target/x86_64-unknown-linux-gnu/debug/myagents \
+            --resources src-tauri/target/x86_64-unknown-linux-gnu/debug \
+            --startup
+      - name: Build the Debian installer
+        run: |
+          # The debug smoke has finished; release needs the standard runner's disk.
+          cargo clean --manifest-path src-tauri/Cargo.toml --target x86_64-unknown-linux-gnu --profile dev
+          ./build_linux.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: myagents-ubuntu-24.04-amd64
+          path: src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+  install:
+    needs: build
+    runs-on: ubuntu-24.04
+    container: ubuntu:24.04
+    timeout-minutes: 15
+    steps:
+      # Only install the test harness here. The application's libraries must
+      # come from apt resolving the deb's own dependency metadata.
+      - name: Prepare clean installation environment
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates python3 dbus-x11 xvfb xauth
+          useradd --create-home --shell /bin/bash package-test
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: myagents-ubuntu-24.04-amd64
+          path: installer
+      - name: Install and check the installed package as a normal user
+        shell: bash
+        run: |
+          set -euo pipefail
+          packages=(installer/*.deb)
+          test "${#packages[@]}" -eq 1
+          test "$(dpkg-deb -f "${packages[0]}" Architecture)" = amd64
+          apt-get install -y --no-install-recommends "$(realpath "${packages[0]}")"
+          package_name=$(dpkg-deb -f "${packages[0]}" Package)
+          resource_root=$(dirname "$(dpkg -L "$package_name" | grep '/server-dist.js$')")
+          runuser -u package-test -- dbus-run-session -- xvfb-run -a \
+            python3 "$GITHUB_WORKSPACE/scripts/linux-package-smoke.py" \
+            --app /usr/bin/myagents --resources "$resource_root" --startup
+          apt-get remove -y "$package_name"
+          test ! -e /usr/bin/myagents

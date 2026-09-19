@@ -1,0 +1,180 @@
+name: Test
+
+# Regression gate. The whole point of the test suite is to catch regressions
+# during fast iteration — so it MUST run automatically on every PR and push,
+# not just locally. Required check: a PR that fails this cannot merge.
+on:
+  pull_request:
+  push:
+    branches: [main, "dev/**"]
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # JS/TS gate: typecheck + lint + deterministic test projects + bundle smoke.
+  #
+  # `integration` is the CI-safe stateful pool: serial, scratch filesystem and
+  # loopback-only network via setup-integration.ts. Real Provider / SDK smoke
+  # lives in `credentialed` and is intentionally excluded from public CI.
+  js:
+    name: typecheck · lint · tests · build smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run test:classification
+      - run: npm run test:build-scripts
+      - run: npm run test:unit
+      # `dom` project (jsdom, no secrets) holds security-invariant tests —
+      # externalResourceGuard (zero-egress) + WidgetRenderer (about:srcdoc
+      # transport). Must gate too, else those regressions wouldn't block a merge.
+      - run: npm run test:dom
+      - run: npm run test:integration
+      # Typecheck does not exercise esbuild/Vite bundling, raw imports, or
+      # runtime entrypoint packaging. These cheap smoke builds catch that class.
+      - run: npm run build:server
+      - run: npm run build:bridge
+      - run: npm run build:cli
+      - run: npm run build:web
+
+  # Rust gate: cargo test plus project redline Clippy rules. We only deny
+  # disallowed_methods/macros here; ordinary Clippy warnings stay non-fatal
+  # until they are cleaned up in a dedicated phase.
+  rust:
+    name: cargo test · clippy redlines
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            libssl-dev \
+            libpipewire-0.3-dev \
+            libasound2-dev \
+            build-essential \
+            file
+      - uses: dtolnay/rust-toolchain@1.92.0
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Prepare Tauri bundle path placeholders for cargo tests
+        run: |
+          # Tauri validates bundle resource paths during build-script execution.
+          # This Linux CI job runs Rust unit tests, not a distributable Linux
+          # bundle, so provide inert runner-local placeholders for paths that
+          # are intentionally not committed.
+          mkdir -p src-tauri/resources/claude-agent-sdk
+          mkdir -p src-tauri/resources/sharp-runtime
+          mkdir -p src-tauri/resources/tsx-runtime
+          mkdir -p src-tauri/resources/nodejs
+          mkdir -p src-tauri/resources/speech-inference
+          mkdir -p src-tauri/resources/playwright-control/@playwright/mcp
+          mkdir -p src-tauri/resources/playwright-control/playwright
+          mkdir -p src-tauri/resources/playwright-control/playwright-core
+          printf 'console.log("ci server-dist placeholder");\n' > src-tauri/resources/server-dist.js
+          printf 'console.log("ci plugin-bridge placeholder");\n' > src-tauri/resources/plugin-bridge-dist.mjs
+          printf 'ci placeholder\n' > src-tauri/resources/claude-agent-sdk/.ci-placeholder
+          printf 'ci placeholder\n' > src-tauri/resources/sharp-runtime/.ci-placeholder
+          printf 'ci placeholder\n' > src-tauri/resources/tsx-runtime/.ci-placeholder
+          printf 'ci placeholder\n' > src-tauri/resources/nodejs/.ci-placeholder
+          printf 'ci placeholder\n' > src-tauri/resources/playwright-control/@playwright/mcp/.ci-placeholder
+          printf 'ci placeholder\n' > src-tauri/resources/playwright-control/playwright/.ci-placeholder
+          printf 'ci placeholder\n' > src-tauri/resources/playwright-control/playwright-core/.ci-placeholder
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --locked --all-targets -- -D clippy::disallowed_methods -D clippy::disallowed_macros
+
+  # `--all-targets` above covers Rust target kinds for Linux; it does not
+  # type-check `cfg(windows)`. Keep one native Windows compile gate so stable
+  # toolchain compatibility is verified before the release scripts run.
+  windows-rust:
+    name: Windows cargo check
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Prepare signed CLIProxy build inputs
+        run: node scripts/prepare-cliproxy.mjs win32-x64
+      - name: Verify selective Sherpa source extraction on Windows
+        run: node --test scripts/sherpa-source-extraction.test.mjs
+      - uses: dtolnay/rust-toolchain@1.92.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Prepare Tauri bundle path placeholders for cargo check
+        shell: pwsh
+        run: |
+          $resourceDirs = @(
+            'src-tauri/resources/claude-agent-sdk',
+            'src-tauri/resources/sharp-runtime',
+            'src-tauri/resources/tsx-runtime',
+            'src-tauri/resources/nodejs',
+            'src-tauri/resources/speech-inference',
+            'src-tauri/resources/cli',
+            'src-tauri/resources/playwright-control/@playwright/mcp',
+            'src-tauri/resources/playwright-control/playwright',
+            'src-tauri/resources/playwright-control/playwright-core'
+          )
+          foreach ($directory in $resourceDirs) {
+            New-Item -ItemType Directory -Path $directory -Force | Out-Null
+          }
+          Set-Content src-tauri/resources/server-dist.js 'console.log("ci server-dist placeholder");'
+          Set-Content src-tauri/resources/plugin-bridge-dist.mjs 'console.log("ci plugin-bridge placeholder");'
+          Set-Content src-tauri/resources/claude-agent-sdk/.ci-placeholder 'ci placeholder'
+          Set-Content src-tauri/resources/sharp-runtime/.ci-placeholder 'ci placeholder'
+          Set-Content src-tauri/resources/tsx-runtime/.ci-placeholder 'ci placeholder'
+          Set-Content src-tauri/resources/nodejs/.ci-placeholder 'ci placeholder'
+          Set-Content src-tauri/resources/cli/.ci-placeholder 'ci placeholder'
+          Set-Content src-tauri/resources/playwright-control/@playwright/mcp/.ci-placeholder 'ci placeholder'
+          Set-Content src-tauri/resources/playwright-control/playwright/.ci-placeholder 'ci placeholder'
+          Set-Content src-tauri/resources/playwright-control/playwright-core/.ci-placeholder 'ci placeholder'
+          Set-Content src-tauri/resources/vcruntime140.dll 'ci placeholder'
+          Set-Content src-tauri/resources/vcruntime140_1.dll 'ci placeholder'
+      - run: cargo check --manifest-path src-tauri/Cargo.toml --locked
+
+  # CLIProxy native lifecycle fixtures require a supported Unix platform.
+  # Keep Linux's broad Rust gate; apple-metal requires the Xcode 26 SDK.
+  macos-cliproxy:
+    name: macOS CLIProxy lifecycle
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: dtolnay/rust-toolchain@1.92.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Prepare signed CLIProxy build inputs
+        run: node scripts/prepare-cliproxy.mjs
+      - name: Prepare non-executed Tauri resource paths
+        run: |
+          mkdir -p src-tauri/resources/{claude-agent-sdk,sharp-runtime,tsx-runtime,nodejs,speech-inference,cli,document-processing}
+          mkdir -p src-tauri/resources/playwright-control/{@playwright/mcp,playwright,playwright-core}
+          for directory in claude-agent-sdk sharp-runtime tsx-runtime nodejs speech-inference cli document-processing playwright-control/@playwright/mcp playwright-control/playwright playwright-control/playwright-core; do
+            touch "src-tauri/resources/$directory/.ci-placeholder"
+          done
+          touch src-tauri/resources/server-dist.js src-tauri/resources/plugin-bridge-dist.mjs
+      - name: Test native component lifecycle without provider credentials
+        run: |
+          host=$(rustc -vV | sed -n 's/^host: //p')
+          cargo test --manifest-path src-tauri/Cargo.toml --locked --lib 'cliproxy::' --config "target.$host.runner = ['env', 'DYLD_FALLBACK_LIBRARY_PATH=/usr/lib/swift']"

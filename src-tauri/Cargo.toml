@@ -1,0 +1,209 @@
+[package]
+name = "myagents"
+version = "0.4.20"
+description = "MyAgents - Desktop Claude Code for everyone"
+authors = ["MyAgents Team <myagents.io@gmail.com>"]
+license = "AGPL-3.0-only"
+repository = "https://github.com/hAcKlyc/MyAgents"
+homepage = "https://myagents.io"
+edition = "2021"
+# MSRV note: Tauri 2.9 already requires ≥ 1.78. Keep 1.81 explicit so every
+# build uses the same modern std surface; Windows paths that must replace an
+# existing file use an explicit MoveFileExW(REPLACE_EXISTING) helper because
+# `std::fs::rename` does not provide portable replace semantics.
+rust-version = "1.81"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+url = "2"
+serde_json = "1.0"
+base64 = "0.22"
+minisign-verify = "0.2.5"
+sha2 = "0.10"
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+url = "2"
+percent-encoding = "2"
+log = "0.4"
+myagents-media-worker-protocol = { path = "media-worker-protocol" }
+# `macos-private-api` is required for transparent webview windows on macOS —
+# the floating ball / companion panels (PRD 0.2.35) are transparent NSPanels.
+# Main window is unaffected (it never sets transparent(true)).
+tauri = { version = "2.11.2", features = ["tray-icon", "devtools", "image-png", "unstable", "webview-data-url", "macos-private-api", "protocol-asset"] }
+tauri-plugin-log = "2"
+tauri-plugin-fs = "2.4.5"
+tauri-plugin-dialog = "2.6.0"
+which = "8.0.0"
+libc = "0.2.180"
+tauri-plugin-localhost = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-deep-link = "2"
+tauri-plugin-global-shortcut = "2"
+reqwest = { version = "0.13.1", features = ["stream", "json", "blocking", "multipart", "socks", "form"] }
+futures-util = "0.3.31"
+tokio = { version = "1.49.0", features = ["rt", "rt-multi-thread", "sync", "time", "macros"] }
+chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.10"
+futures = "0.3"
+base64 = "0.22"
+minisign-verify = "0.2.5"
+dirs = "6.0"
+sys-locale = "0.3.2"
+uuid = { version = "1.11", features = ["v4"] }
+tokio-tungstenite = { version = "0.24", features = ["native-tls"] }
+prost = "0.13"
+pulldown-cmark = "0.12"
+quick-xml = "0.38.4"
+# YAML frontmatter parsing for slash command / skill SKILL.md files (workspace_files::slash)
+serde_yaml = "0.9"
+# Fuzzy file name search for @ mention picker — small dependency, used only inside workspace_files::search
+fuzzy-matcher = "0.3"
+axum = { version = "0.8", default-features = false, features = ["json", "tokio", "query", "http1"] }
+cron = "0.15"
+portable-pty = "0.8"
+tantivy = "0.22"
+tantivy-jieba = "0.11"
+unicode-normalization = "0.1"
+notify-debouncer-full = "0.6"
+sysinfo = { version = "0.33", default-features = false, features = ["disk", "system"] }
+fs4 = "=0.8.4"
+same-file = "1.0"
+trash = "5.2.3"
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
+sha2 = "0.10"
+zeroize = "1"
+zip = { version = "2.4.2", default-features = false, features = ["deflate-zlib"] }
+# Recording archive path. Opus is compiled from the vendored reference
+# libopus sources so installed apps never depend on a system codec package;
+# Ogg muxing, band-limited sample-rate conversion and the callback-facing
+# SPSC queues remain pure Rust. Rubato's FFT feature is unnecessary because
+# capture rates vary and the archive path uses its streaming sinc resampler.
+ogg = "=0.9.2"
+opus2 = { version = "=0.4.0", default-features = false, features = ["backend-libopus", "bundled", "static"] }
+ringbuf = "=0.4.8"
+rubato = { version = "=0.16.2", default-features = false }
+# Speech model packs contain two pinned tar.bz2 upstream assets. Extraction is
+# implemented in-process so installed apps never consult system tar/Python.
+# The pure-Rust decoder keeps the declared 1.81 MSRV and avoids a libbz2 ABI.
+bzip2-rs = "=0.1.2"
+tar = "=0.4.45"
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+cpal = "=0.18.2"
+
+# Pattern 5: stale-lock recovery needs `kill(pid, 0)` for liveness probing on Unix.
+# The `signal` feature pulls in just `nix::sys::signal::kill` + `nix::unistd::Pid`,
+# nothing else.
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.29", default-features = false, features = ["signal"] }
+
+# macOS-only: runtime workaround for AppKit function-key private-use text
+# leaking from WKWebView arrow-key handling into focused text controls.
+# Keep keyDown flowing through WebKit for caret movement, then clean U+F700-
+# U+F74F from the DOM value when the leak happens.
+# See tauri-apps/tauri#5685, tauri-apps/wry#769, tauri-apps/tauri#10194.
+[target.'cfg(target_os = "macos")'.dependencies]
+# Floating ball (PRD 0.2.35): NSPanel windows that never activate the app.
+# Git branch dependency (not on crates.io) — pinned to a commit per PRD §10.
+tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", rev = "a3122e894383aa068ec5365a42994e3ac94ba1b6" }
+# Frontmost app / window title probe (zero-permission context, PRD §5.1).
+active-win-pos-rs = "0.11"
+# CGDisplay 枚举（线程安全，不碰 NSScreen/MainThreadMarker）与录音首次启动的
+# Screen Recording 系统授权请求。版本对齐 Tauri lock 中既有的 0.25，不新增编译单元。
+core-graphics = "0.25"
+# Selected-text capture: AX API first, clipboard round-trip fallback. Only
+# ever invoked on explicit summon (PRD D3 red line), never on hover.
+get-selected-text = "0.1"
+# AXIsProcessTrusted probe + one-shot system prompt for the permission flow.
+macos-accessibility-client = "0.0.1"
+objc2 = "0.6"
+block2 = "0.6"
+# Native menu emissions must leave Wry callbacks on the ordered main queue.
+# Already locked transitively through AppKit; no new runtime queue or worker.
+dispatch2 = "0.3.1"
+objc2-av-foundation = { version = "0.3.2", default-features = false, features = ["AVCaptureDevice", "AVMediaFormat", "block2"] }
+objc2-foundation = { version = "0.3.2", features = ["NSString"] }
+objc2-web-kit = { version = "0.3.2", features = ["WKWebView", "block2"] }
+# UserNotifications owns per-request identifiers and the response delegate so
+# stacked notification clicks stay correlated to the exact route.
+objc2-user-notifications = "0.3.2"
+# Native window chrome and Edit-menu focus routing use AppKit view/responder APIs.
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSWindow", "NSView", "NSResponder", "NSButton", "NSControl", "NSApplication", "std"] }
+# System-audio capture on macOS 13+; microphone capture uses CPAL/CoreAudio.
+screencapturekit = { version = "=8.0.1", features = ["macos_13_0"] }
+
+# Windows platform APIs:
+# - pid-liveness/start-time probes via PROCESS_QUERY_LIMITED_INFORMATION
+# - floating-ball tool-window styles, no-activate behavior, focus restoration
+# - ShellExecuteW URL handoff for default browser opens without cmd.exe metacharacter parsing
+# - wake-lock power requests below
+# - handle-relative workspace IO via NtCreateFile(ObjectAttributes.RootDirectory)
+# Minimal feature set — version 0.59 is already pulled transitively, so no new lock entry.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Wdk_Foundation",
+    "Wdk_Storage_FileSystem",
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_IO",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+    # `wake_lock::windows::PlatformImpl` calls `PowerCreateRequest` +
+    # `PowerSetRequest` (PowerRequestSystemRequired | PowerRequestAwayModeRequired)
+    # to keep the OS from idle-sleeping during long-running cron tasks.
+    # HANDLE-based on purpose — `SetThreadExecutionState` is per-thread and
+    # silently leaks the assertion across Tokio worker resumption; see
+    # `src/wake_lock/windows.rs` for the trade-off.
+    "Win32_System_Power",
+] }
+# `junction` creates NTFS directory junctions without admin / Developer Mode
+# (`std::os::windows::fs::symlink_dir` would otherwise need ERROR_PRIVILEGE_NOT_HELD
+# elevated rights). The path-safety Windows tests use this to verify that
+# no-follow workspace IO rejects junction races. Runtime inventory projection
+# itself is Node-owned (`symlinkSync(target, link, 'junction')`).
+junction = "1.0"
+# WinRT toast notifications with click activation. `tauri-plugin-notification`
+# wraps this same crate but doesn't expose the `on_activated` callback we need
+# to bring the app to the foreground when the user clicks a toast. Promoting
+# it to a direct dependency lets `notification::show_with_navigation` register
+# the callback ourselves while still sharing the version locked in the dep
+# graph (notify-rust pulls 0.7.x transitively).
+tauri-winrt-notification = "0.7"
+
+# Freedesktop notification actions expose the exact notification handle that
+# was clicked. Keep this Linux-only: macOS uses UserNotifications above and
+# Windows uses WinRT.
+[target.'cfg(target_os = "linux")'.dependencies]
+notify-rust = "4.14"
+# The explicit PipeWire host exposes real sink nodes as input-capable capture
+# devices. Capability is granted only when that runtime node probe succeeds.
+cpal = { version = "=0.18.2", features = ["pipewire"] }
+
+[dev-dependencies]
+tauri = { version = "2.11.2", features = ["test"] }
+tempfile = "3.10"
+
+# Daily development needs actionable backtraces, not full variable/type DWARF.
+# Tests inherit this profile. Opt into full debugger data when needed with
+# CARGO_PROFILE_DEV_DEBUG=2 (or CARGO_PROFILE_TEST_DEBUG=2 for cargo test).
+[profile.dev]
+debug = "line-tables-only"
+incremental = true

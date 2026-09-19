@@ -1,0 +1,195 @@
+import { describe, expect, it, vi } from 'vitest';
+import {
+  classifySidecarRequest,
+  composeSidecarRequestHandler,
+  resolveSidecarComposition,
+  runSidecarBootstrap,
+  type SidecarCapability,
+} from './sidecar-composition';
+
+function request(path: string, method = 'GET'): Request {
+  return new Request(`http://127.0.0.1:31415${path}`, { method });
+}
+
+describe('Sidecar production composition', () => {
+  it('keeps omitted role fail-safe Session and requires an explicit development union', () => {
+    expect([...resolveSidecarComposition(null, false).capabilities]).toEqual(['common', 'session']);
+    expect([...resolveSidecarComposition(null, true).capabilities]).toEqual(['common', 'global', 'session']);
+    expect(() => resolveSidecarComposition('global', true)).toThrow(
+      '--dev-union cannot be combined with --sidecar-role',
+    );
+  });
+
+  it.each([
+    ['GET', '/health', 'common'],
+    ['GET', '/refs/12345678', 'common'],
+    ['POST', '/api/provider/verify', 'global'],
+    ['POST', '/api/cliproxy/control', 'common'],
+    ['POST', '/api/process/graceful-shutdown', 'global'],
+    ['POST', '/api/browser/session/retire', 'global'],
+    ['POST', '/api/mcp/oauth/discover', 'global'],
+    ['POST', '/mcp/playwright', 'global'],
+    ['GET', '/api/runtime/models?type=codex', 'common'],
+    ['GET', '/api/runtime/permission-modes?type=codex', 'common'],
+    ['GET', '/api/runtime/type', 'session'],
+    ['GET', '/sessions', 'global'],
+    ['POST', '/sessions', 'global'],
+    ['POST', '/api/session/birth', 'session'],
+    ['GET', '/api/session-tags', 'global'],
+    ['POST', '/api/session-tags/assign', 'global'],
+    ['POST', '/api/session-tags/manage', 'global'],
+    ['GET', '/sessions/session-1', 'common'],
+    ['PATCH', '/sessions/session-1', 'common'],
+    ['POST', '/chat/send', 'session'],
+    ['POST', '/cron/execute-sync', 'session'],
+    ['POST', '/goal/execute-sync', 'session'],
+    ['POST', '/api/im/enqueue', 'session'],
+    ['POST', '/api/inbox/drain', 'session'],
+    ['POST', '/api/runtime/config', 'session'],
+    ['POST', '/api/admin/session/send', 'session'],
+    ['POST', '/api/admin/goal/update', 'session'],
+    ['POST', '/api/admin/task/create-attached', 'session'],
+    ['POST', '/api/admin/status', 'common'],
+    ['POST', '/api/admin/anydoc/convert', 'common'],
+    ['POST', '/api/admin/anydoc/status', 'common'],
+    ['POST', '/api/admin/reload', 'session'],
+    ['POST', '/api/admin/task/run', 'common'],
+    ['POST', '/api/admin/mcp/remove', 'common'],
+    ['POST', '/api/cc-plugin/session-enable', 'session'],
+    ['GET', '/api/cc-plugin/list', 'common'],
+    ['GET', '/api/project-capabilities', 'common'],
+    ['POST', '/api/project-capability/toggle', 'common'],
+  ] as const)('%s %s is owned by %s', (method, path, capability) => {
+    expect(classifySidecarRequest(request(path, method))).toBe(capability);
+  });
+
+  it('does not grant unknown control routes a default capability', () => {
+    expect(classifySidecarRequest(request('/api/admin/future-owner', 'POST'))).toBeNull();
+    expect(classifySidecarRequest(request('/api/future-owner', 'POST'))).toBeNull();
+  });
+
+  describe.each(['global', 'session', 'development-union'] as const)(
+    '%s Record CLI admission',
+    (role) => {
+      it.each([
+        ['record', 'list'],
+        ['record', 'create'],
+        ['thought', 'list'],
+        ['thought', 'create'],
+      ] as const)('dispatches %s/%s through the common management surface', async (group, action) => {
+        const realHandler = vi.fn(async () => Response.json({ success: true }));
+        const composition = role === 'development-union'
+          ? resolveSidecarComposition(null, true)
+          : resolveSidecarComposition(role, false);
+        const cliRequest = request(`/api/admin/${group}/${action}`, 'POST');
+
+        const response = await composeSidecarRequestHandler(composition, realHandler)(cliRequest);
+
+        expect(response.status).toBe(200);
+        expect(classifySidecarRequest(cliRequest)).toBe('common');
+        expect(realHandler).toHaveBeenCalledExactlyOnceWith(cliRequest);
+      });
+    },
+  );
+
+  it('routes one-shot Grok verification through the Global provider owner', async () => {
+    const grokVerification = request('/api/grok/verify', 'POST');
+    expect(classifySidecarRequest(grokVerification)).toBe('global');
+
+    const globalHandler = vi.fn(async () => new Response('verified', { status: 202 }));
+    const globalResponse = await composeSidecarRequestHandler(
+      resolveSidecarComposition('global', false),
+      globalHandler,
+    )(grokVerification);
+    expect(globalResponse.status).toBe(202);
+    expect(globalHandler).toHaveBeenCalledOnce();
+
+    const sessionHandler = vi.fn(async () => new Response('wrong owner'));
+    const sessionResponse = await composeSidecarRequestHandler(
+      resolveSidecarComposition('session', false),
+      sessionHandler,
+    )(request('/api/grok/verify', 'POST'));
+    expect(sessionResponse.status).toBe(404);
+    expect(sessionHandler).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['global', 'POST', '/chat/send'],
+    ['global', 'POST', '/api/session/birth'],
+    ['session', 'POST', '/sessions'],
+    ['global', 'POST', '/cron/execute-sync'],
+    ['global', 'POST', '/goal/execute-sync'],
+    ['global', 'POST', '/api/im/enqueue'],
+    ['global', 'POST', '/api/inbox/drain'],
+    ['session', 'POST', '/api/provider/verify'],
+    ['session', 'POST', '/api/cliproxy/verify'],
+    ['session', 'POST', '/api/mcp/oauth/start'],
+    ['session', 'POST', '/mcp/playwright'],
+    ['session', 'POST', '/api/browser/session/retire'],
+    ['session', 'DELETE', '/sessions/session-1'],
+  ] as const)('%s rejects wrong-role %s %s before the real handler', async (role, method, path) => {
+    const realHandler = vi.fn(async () => new Response('handled'));
+    const handler = composeSidecarRequestHandler(
+      resolveSidecarComposition(role, false),
+      realHandler,
+    );
+
+    const response = await handler(request(path, method));
+
+    expect(response.status).toBe(404);
+    expect(realHandler).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['global', 'POST', '/api/provider/verify'],
+    ['global', 'POST', '/api/cliproxy/control'],
+    ['session', 'POST', '/api/cliproxy/control'],
+    ['global', 'POST', '/api/mcp/oauth/start'],
+    ['global', 'POST', '/mcp/playwright'],
+    ['global', 'POST', '/api/browser/session/retire'],
+    ['session', 'POST', '/chat/send'],
+    ['session', 'POST', '/api/session/birth'],
+    ['session', 'PATCH', '/sessions/session-1'],
+    ['global', 'PATCH', '/sessions/session-1'],
+    ['session', 'POST', '/cron/execute-sync'],
+    ['session', 'POST', '/goal/execute-sync'],
+    ['session', 'POST', '/api/im/enqueue'],
+    ['session', 'POST', '/api/inbox/drain'],
+  ] as const)('%s dispatches real-role %s %s', async (role, method, path) => {
+    const realHandler = vi.fn(async () => new Response('handled', { status: 202 }));
+    const handler = composeSidecarRequestHandler(
+      resolveSidecarComposition(role, false),
+      realHandler,
+    );
+
+    const response = await handler(request(path, method));
+
+    expect(response.status).toBe(202);
+    expect(realHandler).toHaveBeenCalledOnce();
+  });
+
+  it('runs common plus only the selected production boot capability', async () => {
+    const calls: SidecarCapability[] = [];
+    const steps = (['common', 'global', 'session'] as const).map(capability => ({
+      capability,
+      run: () => { calls.push(capability); },
+    }));
+
+    await runSidecarBootstrap(resolveSidecarComposition('global', false), steps);
+    expect(calls).toEqual(['common', 'global']);
+
+    calls.length = 0;
+    await runSidecarBootstrap(resolveSidecarComposition('session', false), steps);
+    expect(calls).toEqual(['common', 'session']);
+  });
+
+  it('runs both production capability groups only in the explicit dev harness', async () => {
+    const calls: SidecarCapability[] = [];
+    await runSidecarBootstrap(resolveSidecarComposition(null, true), [
+      { capability: 'common', run: () => { calls.push('common'); } },
+      { capability: 'global', run: () => { calls.push('global'); } },
+      { capability: 'session', run: () => { calls.push('session'); } },
+    ]);
+    expect(calls).toEqual(['common', 'global', 'session']);
+  });
+});

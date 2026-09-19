@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "controls": {
+    "policyRevision": 1,
+    "providerMode": "internal",
+    "revokedVersions": [],
+    "revokedArtifacts": []
+  },
+  "releases": [
+    {
+      "version": "7.2.158",
+      "tag": "v7.2.158",
+      "commit": "5b2785617d1e7de84a9f4dee599d275a4ccd8999",
+      "compatibility": {
+        "minAppVersion": "0.4.17",
+        "revision": 1,
+        "credentialCompatibleVersions": []
+      },
+      "artifacts": {
+        "darwin-arm64": {
+          "url": "https://download.myagents.io/runtimes/cliproxy/7.2.158-darwin-arm64-92052e99f6c9a7ecb63c69876bef81ed8fdc0746cd10332134dfa30e4a24fb50.zip",
+          "size": 20040945,
+          "sha256": "92052e99f6c9a7ecb63c69876bef81ed8fdc0746cd10332134dfa30e4a24fb50",
+          "sourceSha256": "ac8b4cc36294a88fc1ef631de03b097bef6713d8172b66630ac2727e90faf58b",
+          "files": {
+            "cli-proxy-api": "b804d9d28e841e568e9d446e0d54a21c4065f11583db876f97e00aeb3d992c35",
+            "LICENSE": "879792e89cf1bdd6a8d446033ec87e30496f97dcafc4656dc53f641509b346a6"
+          },
+          "executable": "cli-proxy-api"
+        },
+        "darwin-x64": {
+          "url": "https://download.myagents.io/runtimes/cliproxy/7.2.158-darwin-x64-9710e76bd185cefa37d22ea4cc8173d3b86fa60afe6b9fb5310f58a3b5d89718.zip",
+          "size": 22381195,
+          "sha256": "9710e76bd185cefa37d22ea4cc8173d3b86fa60afe6b9fb5310f58a3b5d89718",
+          "sourceSha256": "e7648e73efcecd4eedb6f1dc45d777537594bc0ecece15dd49932b594593fca3",
+          "files": {
+            "cli-proxy-api": "56adcc6f1b1a25b6be26c3cd56e15ef9f5b5c4bfad575af764df8d79aeba7fe0",
+            "LICENSE": "879792e89cf1bdd6a8d446033ec87e30496f97dcafc4656dc53f641509b346a6"
+          },
+          "executable": "cli-proxy-api"
+        },
+        "win32-x64": {
+          "url": "https://download.myagents.io/runtimes/cliproxy/7.2.158-win32-x64-6b5d074958186864a9791942960e86b383823ea48ab52220ecdb1d8996708527.zip",
+          "size": 22250386,
+          "sha256": "6b5d074958186864a9791942960e86b383823ea48ab52220ecdb1d8996708527",
+          "sourceSha256": "28c3b4d77b6e380ee9158577013d8b365f890053f7da5bed9f3d8f2d097cc1e1",
+          "files": {
+            "cli-proxy-api.exe": "493c33ef0dc5986d36233164bc92eda4e6a62be1f0406abec679c0af08a759ad",
+            "LICENSE": "93df585e5fa07ead6d47a3ab2dbdf0255782a39fe830022c0274a70394223cc8"
+          },
+          "executable": "cli-proxy-api.exe"
+        }
+      }
+    },
+    {
+      "version": "7.2.158",
+      "tag": "v7.2.158",
+      "commit": "5b2785617d1e7de84a9f4dee599d275a4ccd8999",
+      "compatibility": {
+        "minAppVersion": "0.4.20",
+        "revision": 2,
+        "credentialCompatibleVersions": []
+      },
+      "artifacts": {
+        "darwin-arm64": {
+          "url": "https://download.myagents.io/runtimes/cliproxy/7.2.158-darwin-arm64-92052e99f6c9a7ecb63c69876bef81ed8fdc0746cd10332134dfa30e4a24fb50.zip",
+          "size": 20040945,
+          "sha256": "92052e99f6c9a7ecb63c69876bef81ed8fdc0746cd10332134dfa30e4a24fb50",
+          "sourceSha256": "ac8b4cc36294a88fc1ef631de03b097bef6713d8172b66630ac2727e90faf58b",
+          "files": {
+            "cli-proxy-api": "b804d9d28e841e568e9d446e0d54a21c4065f11583db876f97e00aeb3d992c35",
+            "LICENSE": "879792e89cf1bdd6a8d446033ec87e30496f97dcafc4656dc53f641509b346a6"
+          },
+          "executable": "cli-proxy-api"
+        },
+        "darwin-x64": {
+          "url": "https://download.myagents.io/runtimes/cliproxy/7.2.158-darwin-x64-9710e76bd185cefa37d22ea4cc8173d3b86fa60afe6b9fb5310f58a3b5d89718.zip",
+          "size": 22381195,
+          "sha256": "9710e76bd185cefa37d22ea4cc8173d3b86fa60afe6b9fb5310f58a3b5d89718",
+          "sourceSha256": "e7648e73efcecd4eedb6f1dc45d777537594bc0ecece15dd49932b594593fca3",
+          "files": {
+            "cli-proxy-api": "56adcc6f1b1a25b6be26c3cd56e15ef9f5b5c4bfad575af764df8d79aeba7fe0",
+            "LICENSE": "879792e89cf1bdd6a8d446033ec87e30496f97dcafc4656dc53f641509b346a6"
+          },
+          "executable": "cli-proxy-api"
+        },
+        "win32-x64": {
+          "url": "https://download.myagents.io/runtimes/cliproxy/7.2.158-win32-x64-6b5d074958186864a9791942960e86b383823ea48ab52220ecdb1d8996708527.zip",
+          "size": 22250386,
+          "sha256": "6b5d074958186864a9791942960e86b383823ea48ab52220ecdb1d8996708527",
+          "sourceSha256": "28c3b4d77b6e380ee9158577013d8b365f890053f7da5bed9f3d8f2d097cc1e1",
+          "files": {
+            "cli-proxy-api.exe": "493c33ef0dc5986d36233164bc92eda4e6a62be1f0406abec679c0af08a759ad",
+            "LICENSE": "93df585e5fa07ead6d47a3ab2dbdf0255782a39fe830022c0274a70394223cc8"
+          },
+          "executable": "cli-proxy-api.exe"
+        }
+      }
+    }
+  ]
+}

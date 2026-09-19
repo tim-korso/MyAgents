@@ -1,0 +1,492 @@
+/*
+ * Markdown typography owns its rhythm at the renderer root. The default mode
+ * is shared by chat and document surfaces; compact changes the whole system
+ * together instead of shrinking only the body font.
+ *
+ * Keep these rules in the components layer so a deliberately scoped surface
+ * override (for example the compact user bubble paragraph reset) can still win
+ * through Tailwind utilities or an unlayered host rule.
+ */
+@layer components {
+  .markdown-content {
+    --markdown-font-size: var(--text-base);
+    --markdown-line-height: 1.625;
+    --markdown-flow-gap: var(--space-3);
+    --markdown-list-indent: var(--space-6);
+    --markdown-list-block-gap: var(--space-2);
+    --markdown-list-item-gap: var(--space-1);
+    --markdown-loose-list-item-gap: var(--space-2);
+    --markdown-nested-list-indent: var(--space-6);
+    --markdown-nested-list-gap: var(--space-1);
+    --markdown-heading-content-gap: var(--space-2);
+    --markdown-after-list-gap: var(--space-4);
+    --markdown-rule-gap: var(--space-6);
+    --markdown-highlight-bg: var(--accent-warm-subtle);
+    --markdown-highlight-ink: var(--ink);
+
+    font-size: var(--markdown-font-size);
+    font-weight: var(--font-weight-prose);
+    color: var(--ink);
+    line-height: var(--markdown-line-height);
+    letter-spacing: 0;
+  }
+
+  /* Editor table projections render each cell as a standalone Markdown root.
+     Preserve the containing header role instead of resetting it to prose. */
+  th > .markdown-content {
+    font-weight: var(--font-weight-emphasis);
+  }
+
+  .markdown-content--compact {
+    --markdown-font-size: var(--text-sm);
+    --markdown-line-height: 1.55;
+    --markdown-flow-gap: var(--space-2);
+    --markdown-list-indent: var(--space-6);
+    --markdown-list-block-gap: var(--space-1-5);
+    --markdown-list-item-gap: var(--space-1);
+    --markdown-loose-list-item-gap: var(--space-1-5);
+    --markdown-nested-list-indent: var(--space-5);
+    --markdown-nested-list-gap: var(--space-1);
+    --markdown-heading-content-gap: var(--space-1-5);
+    --markdown-after-list-gap: var(--space-3);
+    --markdown-rule-gap: var(--space-4);
+  }
+
+  /* One-directional flow makes every adjacency deterministic: the following
+     block owns the gap, so margins never add or collapse unpredictably. */
+  .markdown-content > :first-child {
+    margin-block-start: 0;
+  }
+
+  .markdown-paragraph {
+    margin: var(--markdown-flow-gap) 0 0;
+    line-height: var(--markdown-line-height);
+  }
+
+  .markdown-strong {
+    color: inherit;
+    font-weight: var(--font-weight-emphasis);
+  }
+
+  .markdown-heading {
+    margin-block-end: 0;
+    color: var(--ink);
+    font-weight: var(--font-weight-emphasis);
+  }
+
+  .markdown-h1 {
+    margin-block-start: var(--space-8);
+    font-size: var(--text-2xl);
+    line-height: var(--text-2xl--line-height);
+  }
+
+  .markdown-h2 {
+    margin-block-start: var(--space-8);
+    font-size: var(--text-xl);
+    line-height: var(--text-xl--line-height);
+  }
+
+  .markdown-h3 {
+    margin-block-start: var(--space-6);
+    font-size: var(--text-lg);
+    line-height: var(--text-lg--line-height);
+  }
+
+  .markdown-h4 {
+    margin-block-start: var(--space-4);
+    font-size: var(--text-base);
+    line-height: 1.5;
+  }
+
+  .markdown-h5 {
+    margin-block-start: var(--space-3);
+    font-size: var(--text-base);
+    line-height: 1.5;
+  }
+
+  .markdown-h6 {
+    margin-block-start: var(--space-3);
+    font-size: var(--text-base);
+    line-height: 1.5;
+  }
+
+  .markdown-heading
+    + :is(
+      .markdown-paragraph,
+      .markdown-list,
+      .markdown-blockquote,
+      .markdown-table,
+      .markdown-code-block
+    ) {
+    margin-block-start: var(--markdown-heading-content-gap);
+  }
+
+  .markdown-content--compact .markdown-h1 {
+    margin-block-start: var(--space-4);
+    font-size: var(--text-lg);
+    line-height: 1.4;
+  }
+
+  .markdown-content--compact .markdown-h2 {
+    margin-block-start: var(--space-3);
+    font-size: var(--text-base);
+    line-height: 1.45;
+  }
+
+  .markdown-content--compact :is(.markdown-h3, .markdown-h4) {
+    margin-block-start: var(--space-3);
+    font-size: var(--text-sm);
+    line-height: 1.5;
+  }
+
+  .markdown-content--compact :is(.markdown-h5, .markdown-h6) {
+    margin-block-start: var(--space-2);
+    font-size: var(--text-sm);
+    line-height: 1.5;
+  }
+
+  .markdown-heading + .markdown-heading {
+    margin-block-start: var(--markdown-heading-content-gap);
+  }
+
+  .markdown-list {
+    display: block;
+    margin-block: var(--markdown-list-block-gap) 0;
+    margin-inline-start: var(--markdown-list-indent);
+    padding: 0;
+    color: inherit;
+    list-style-position: outside;
+  }
+
+  .markdown-list-unordered {
+    list-style-type: disc;
+  }
+
+  .markdown-list-ordered {
+    list-style-type: decimal;
+  }
+
+  .markdown-list-item::marker {
+    color: var(--ink-muted);
+  }
+
+  .markdown-list-item {
+    display: list-item;
+    padding-inline-start: var(--space-1);
+  }
+
+  .markdown-list > .markdown-list-item + .markdown-list-item {
+    margin-block-start: var(--markdown-list-item-gap);
+  }
+
+  /* GFM loose lists contain paragraph nodes. Preserve that authored grouping
+     rather than guessing density from the length of the rendered text. */
+  .markdown-list > .markdown-list-item:has(> .markdown-paragraph) + .markdown-list-item {
+    margin-block-start: var(--markdown-loose-list-item-gap);
+  }
+
+  .markdown-list .markdown-list-unordered {
+    list-style-type: circle;
+  }
+
+  .markdown-list .markdown-list .markdown-list-unordered {
+    list-style-type: square;
+  }
+
+  .markdown-list-item > .markdown-paragraph {
+    margin-block-start: 0;
+  }
+
+  .markdown-list-item > .markdown-paragraph + .markdown-paragraph {
+    margin-block-start: var(--space-2);
+  }
+
+  .markdown-content--compact
+    .markdown-list-item
+    > .markdown-paragraph
+    + .markdown-paragraph {
+    margin-block-start: var(--space-1-5);
+  }
+
+  .markdown-list-item > .markdown-list {
+    margin-block-start: var(--markdown-nested-list-gap);
+    margin-inline-start: var(--markdown-nested-list-indent);
+  }
+
+  .markdown-list-item
+    > .markdown-list
+    > .markdown-list-item
+    + .markdown-list-item {
+    margin-block-start: var(--markdown-nested-list-gap);
+  }
+
+  /* A paragraph after a completed list starts a new thought. Giving that
+     boundary more room than li + li restores the visible cluster hierarchy. */
+  .markdown-content > .markdown-list + .markdown-paragraph {
+    margin-block-start: var(--markdown-after-list-gap);
+  }
+
+  /* remark-gfm annotates task lists with these classes. The renderer preserves
+     them so a checkbox replaces, rather than sits beside, the normal marker. */
+  .markdown-list.contains-task-list {
+    /* Checkbox + gap occupy the marker column, so subtract that column from
+       the list indent while keeping the task text aligned with normal items. */
+    margin-inline-start: calc(var(--markdown-list-indent) - var(--space-5));
+    list-style-type: none;
+  }
+
+  .markdown-list-item.task-list-item {
+    padding-inline-start: 0;
+    list-style-type: none;
+  }
+
+  .markdown-list-item.task-list-item > input[type="checkbox"] {
+    inline-size: 1em;
+    block-size: 1em;
+    margin: 0 var(--space-2) 0 0;
+    accent-color: var(--accent-warm);
+    vertical-align: -0.12em;
+  }
+
+  .markdown-blockquote {
+    margin: var(--markdown-flow-gap) 0 0;
+    border-inline-start: 2px solid var(--line-strong);
+    padding: var(--space-1) var(--space-3) var(--space-1) var(--space-4);
+    color: var(--ink-secondary);
+  }
+
+  .markdown-blockquote > .markdown-paragraph {
+    margin-block-start: 0;
+  }
+
+  .markdown-blockquote > .markdown-paragraph + .markdown-paragraph {
+    margin-block-start: var(--space-2);
+  }
+
+  .markdown-content--compact
+    .markdown-blockquote
+    > .markdown-paragraph
+    + .markdown-paragraph {
+    margin-block-start: var(--space-1-5);
+  }
+
+  .markdown-content--compact .markdown-blockquote {
+    padding-inline: var(--space-3);
+  }
+
+  .markdown-table,
+  .markdown-code-block {
+    margin-block: var(--markdown-flow-gap) 0;
+  }
+
+  .markdown-table-cell,
+  .markdown-table-header {
+    padding: var(--space-2) var(--space-3);
+    line-height: 1.5;
+    vertical-align: top;
+  }
+
+  .markdown-table-cell {
+    font-size: var(--text-sm);
+  }
+
+  .markdown-table-header {
+    color: var(--ink);
+    font-size: var(--text-sm);
+    font-weight: var(--font-weight-emphasis);
+    letter-spacing: 0;
+    text-align: start;
+  }
+
+  .markdown-content--compact .markdown-table-cell,
+  .markdown-content--compact .markdown-table-header {
+    padding: var(--space-1-5) var(--space-2);
+    font-size: var(--text-xs);
+  }
+
+  .markdown-rule {
+    margin: var(--markdown-rule-gap) 0 0;
+  }
+
+  .markdown-rule + * {
+    margin-block-start: var(--markdown-rule-gap);
+  }
+
+  /* Content extensions use the same Theme surfaces as native Markdown. */
+  .markdown-content mark {
+    background: var(--markdown-highlight-bg);
+    color: var(--markdown-highlight-ink);
+    border-radius: var(--radius-sm);
+    padding-inline: var(--space-0-5);
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
+
+  .markdown-content kbd {
+    font-family: var(--font-code);
+    font-size: 0.9em;
+    font-weight: var(--font-weight-normal);
+    color: var(--ink);
+    background: var(--paper-inset);
+    border: 1px solid var(--line-strong);
+    border-block-end-width: 2px;
+    border-radius: var(--radius-sm);
+    padding: var(--space-0-5) var(--space-1-5);
+    white-space: normal;
+  }
+
+  .markdown-content details {
+    margin-block-start: var(--markdown-flow-gap);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--paper-inset);
+  }
+
+  .markdown-content summary {
+    cursor: pointer;
+    color: var(--ink);
+    font-weight: var(--font-weight-emphasis);
+    border-radius: var(--radius-sm);
+  }
+
+  .markdown-content summary::marker {
+    color: var(--ink-secondary);
+  }
+
+  .markdown-content summary:hover {
+    color: var(--accent-warm);
+  }
+
+  .markdown-content :is(summary, a):focus-visible {
+    outline: 2px solid var(--focus-border);
+    outline-offset: var(--space-0-5);
+  }
+
+  .markdown-content details[open] > summary {
+    margin-block-end: var(--space-2);
+  }
+
+  .markdown-content details > :not(summary) {
+    margin-inline-start: var(--space-4);
+  }
+
+  .markdown-content [data-footnotes] {
+    margin-block-start: var(--markdown-rule-gap);
+    border-block-start: 1px solid var(--line);
+    padding-block-start: var(--space-3);
+    color: var(--ink-secondary);
+    font-size: var(--text-sm);
+  }
+
+  .markdown-content [data-footnotes] > .markdown-list {
+    margin-block-start: 0;
+  }
+
+  .markdown-content [data-footnote-backref] {
+    margin-inline-start: var(--space-1);
+    font-weight: var(--font-weight-normal);
+  }
+
+  .markdown-content img {
+    display: block;
+    max-inline-size: 100%;
+    block-size: auto;
+    margin-block: var(--space-3);
+  }
+
+  /* Prose weight must not synthesize bold code or mathematical glyphs. */
+  .markdown-content :is(code, pre, .katex) {
+    font-weight: var(--font-weight-normal);
+  }
+
+  .markdown-content .katex-display {
+    max-inline-size: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+}
+
+/* Width belongs to the pane, not the window: sidebars and split previews stay clear. */
+.markdown-wide-surface, .md-editor-host { container: markdown-surface / inline-size; }
+.markdown-table { position:relative; min-width:0; max-width:100%; padding-right:36px; }
+.md-editor-host .md-table-shell { max-width:100%; min-width:0; padding-right:36px; }
+.markdown-table-scroll { max-width:100%; overflow-x:auto; overscroll-behavior-x:contain; }
+.markdown-wide-surface .ai-message-content > .markdown-content:not(.markdown-content--compact) > .markdown-table,
+.md-editor-host .md-projection-Table:not(.md-projection-nested) > .md-table-shell {
+  width:max-content;
+  min-width:100%;
+  max-width:max(100%, calc(100cqw - 104px));
+  position:relative;
+  left:50%;
+  transform:translateX(-50%);
+  padding-right:36px;
+}
+.markdown-table-actions {
+  position:absolute; top:4px; right:0; z-index:2;
+  display:flex; flex-direction:column; gap:2px;
+  padding:2px; border:1px solid var(--line); border-radius:var(--radius-md);
+  background:var(--paper-elevated); box-shadow:var(--shadow-xs);
+  opacity:0; pointer-events:none; transition:opacity .12s;
+}
+/* Keep the visual gap inside the toolbar's hit area when it sits outside the
+   table shell. Inherit pointer-events so hidden actions cannot intercept input. */
+.markdown-table-actions::before {
+  content:""; position:absolute; top:-1px; bottom:-1px; right:100%; width:6px;
+}
+.markdown-table:hover > .markdown-table-actions,
+.markdown-table:focus-within > .markdown-table-actions,
+.md-table-shell:hover > .markdown-table-actions,
+.md-table-shell:focus-within > .markdown-table-actions { opacity:1; pointer-events:auto; }
+.markdown-table-actions button,
+.md-editor-shell .markdown-table-actions button {
+  display:flex; align-items:center; justify-content:center;
+  width:28px; height:28px; min-height:28px; padding:0;
+  color:var(--ink-secondary); border-radius:var(--radius);
+}
+.markdown-table-actions button:hover { color:var(--ink); background:var(--hover-bg); }
+.markdown-table-actions button:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+.markdown-table-actions button[aria-disabled="true"] { opacity:.5; cursor:wait; }
+.markdown-table-error { position:absolute; right:0; top:100%; width:180px; padding:8px; background:var(--paper-elevated); color:var(--error); font-size:var(--text-xs); }
+@container markdown-surface (min-width:860px) {
+  .markdown-wide-surface .ai-message-content > .markdown-content:not(.markdown-content--compact) > .markdown-table,
+  .md-editor-host .md-projection-Table:not(.md-projection-nested) > .md-table-shell { padding-right:0; }
+  .markdown-wide-surface .ai-message-content > .markdown-content:not(.markdown-content--compact) > .markdown-table > .markdown-table-actions,
+  .md-editor-host .md-projection-Table:not(.md-projection-nested) > .md-table-shell > .markdown-table-actions { right:-36px; }
+}
+@media (hover:none) { .markdown-table-actions { opacity:1; pointer-events:auto; } }
+
+/* Short cells contribute their natural text width; long cells stop shrinking at
+   16em. The hidden probe changes min-content only, leaving room to grow wider. */
+.markdown-table, .md-table-shell { --markdown-table-readable-width:16em; }
+[data-table-sizing]::before {
+  content:attr(data-table-sizing);
+  display:block;
+  inline-size:max-content;
+  max-inline-size:var(--markdown-table-readable-width);
+  block-size:0;
+  overflow:hidden;
+  white-space:pre;
+  visibility:hidden;
+  user-select:none;
+  pointer-events:none;
+}
+.markdown-table-cell, .markdown-table-header,
+.md-table-shell td, .md-table-shell th,
+.md-table-shell .markdown-content { overflow-wrap:anywhere; }
+.markdown-table-scroll, .md-table-scroll {
+  scrollbar-width:thin;
+  scrollbar-color:var(--line-strong) transparent;
+}
+
+/* File/web links share typography across prose, headings and tables. A code
+   label changes the font, not the target's interactive surface or color. */
+.markdown-content-link:has(code) {
+  font-size: 0.9em;
+}
+.markdown-content-link code {
+  font-size: inherit;
+  color: inherit;
+  background: transparent;
+  padding: 0;
+}

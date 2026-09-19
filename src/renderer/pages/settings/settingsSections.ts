@@ -1,0 +1,41 @@
+export type SettingsSection =
+  | 'general'
+  | 'proxy'
+  | 'shortcuts'
+  | 'providers'
+  | 'mcp'
+  | 'skills'
+  | 'sub-agents'
+  | 'plugins'
+  | 'agent'
+  | 'usage-stats'
+  | 'desktop-pet'
+  | 'about';
+
+export const VALID_SECTIONS: SettingsSection[] = [
+  'general',
+  'proxy',
+  'shortcuts',
+  'providers',
+  'mcp',
+  'skills',
+  'sub-agents',
+  'plugins',
+  'agent',
+  'usage-stats',
+  'desktop-pet',
+  'about',
+];
+
+export const MYAGENTS_GITHUB_URL = 'https://github.com/hAcKlyc/MyAgents';
+export const MYAGENTS_SOURCE_CODE_URL = MYAGENTS_GITHUB_URL;
+export const MYAGENTS_RELEASES_URL = `${MYAGENTS_GITHUB_URL}/releases`;
+
+export const PLAYWRIGHT_DEVICE_PRESETS = [
+  'iPhone 15 Pro',
+  'iPhone 15',
+  'iPhone SE',
+  'iPad Pro 11',
+  'Pixel 7',
+  'Galaxy S23',
+];

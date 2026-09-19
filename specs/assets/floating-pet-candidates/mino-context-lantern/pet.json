@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "mino-context-lantern",
+  "displayName": "Mino Context Lantern",
+  "description": "Lantern companion for context illumination and low-noise focus.",
+  "author": "MyAgents / image-gen reference / deterministic hatch-pet repair",
+  "license": "Candidate asset - internal review before distribution",
+  "spritesheetPath": "spritesheet.webp"
+}

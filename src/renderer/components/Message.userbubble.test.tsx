@@ -1,0 +1,165 @@
+import { render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+
+import type { Message as MessageType } from '@/types/chat';
+
+vi.mock('@/context/ImagePreviewContext', () => ({ useImagePreview: () => ({ openPreview: vi.fn() }) }));
+vi.mock('@/analytics', () => ({ track: vi.fn() }));
+
+import Message from './Message';
+
+function userMsg(
+  content: string,
+  overrides: Partial<MessageType> = {}
+): MessageType {
+  return {
+    id: 'u1',
+    role: 'user',
+    content,
+    timestamp: new Date(),
+    ...overrides,
+  } as MessageType;
+}
+
+describe('Message — user bubble spacing', () => {
+  it('keeps background task notifications hidden from the chat flow', () => {
+    const { container } = render(
+      <Message
+        message={userMsg(
+          '<task-notification>{"taskId":"bg-1","status":"completed","description":"Audit repo","summary":"Long completion summary that should stay out of chat."}</task-notification>',
+          { id: 'task-notification-bg-1' },
+        )}
+      />
+    );
+
+    expect(container.firstChild).toBeNull();
+    expect(container).not.toHaveTextContent('Long completion summary');
+    expect(container).not.toHaveTextContent('Audit repo');
+  });
+
+  it('uses equal bubble padding and scopes Markdown paragraph margins', () => {
+    const { container } = render(<Message message={userMsg('你可以帮我写个 v3')} />);
+
+    const bubble = container.querySelector('article');
+    expect(bubble).toHaveClass('p-4');
+    expect(bubble).not.toHaveClass('py-3');
+
+    const content = container.querySelector('.user-message-content');
+    expect(content).toBeInTheDocument();
+    expect(content?.querySelector('p')).toHaveTextContent('你可以帮我写个 v3');
+  });
+
+  it('scopes timestamp and action visibility to the local user bubble group', () => {
+    render(
+      <Message
+        message={userMsg('检查一下 hover 行为', {
+          timestamp: new Date(2026, 5, 25, 22, 43, 15),
+        })}
+      />
+    );
+
+    const timestamp = screen.getByText('2026-06-25 22:43:15');
+    const actionRow = timestamp.parentElement;
+    expect(actionRow).toHaveClass(
+      'opacity-0',
+      'group-hover/user-actions:opacity-100',
+      'group-focus-within/user-actions:opacity-100',
+    );
+
+    const localHoverScope = actionRow?.parentElement;
+    expect(localHoverScope).toHaveClass('group/user-actions', 'w-fit', 'max-w-[85%]');
+  });
+
+  it('renders sent image attachments as a fixed-height ratio-preserving strip', () => {
+    const { container } = render(
+      <Message
+        message={userMsg('能看到我的屏幕嘛', {
+          attachments: [
+            {
+              id: 'att-1',
+              name: 'wide-terminal.png',
+              size: 42_000,
+              mimeType: 'image/png',
+              previewUrl: 'data:image/png;base64,abc',
+              isImage: true,
+            },
+            {
+              id: 'att-2',
+              name: 'portrait.png',
+              size: 21_000,
+              mimeType: 'image/png',
+              previewUrl: 'data:image/png;base64,def',
+              isImage: true,
+            },
+            {
+              id: 'att-3',
+              name: 'notes.txt',
+              size: 128,
+              mimeType: 'text/plain',
+              relativePath: 'notes.txt',
+              isImage: false,
+            },
+          ],
+        })}
+      />
+    );
+
+    const images = Array.from(container.querySelectorAll('img:not([data-file-icon-id])'));
+    expect(images).toHaveLength(2);
+    for (const image of images) {
+      expect(image).toHaveClass('h-full', 'w-auto', 'max-w-none', 'object-contain');
+      expect(image).not.toHaveClass('object-cover');
+
+      const imageFrame = image.parentElement;
+      expect(imageFrame).toHaveClass('h-24');
+      expect(imageFrame).not.toHaveClass('max-w-full');
+
+      const imageCard = imageFrame?.parentElement;
+      expect(imageCard).toHaveClass('w-fit', 'shrink-0');
+      expect(imageCard).not.toHaveClass('max-w-full');
+    }
+
+    const attachmentStrip = images[0]?.closest('.flex-nowrap');
+    expect(attachmentStrip).toBeInTheDocument();
+    expect(attachmentStrip).toHaveClass('overflow-x-auto');
+    expect(attachmentStrip).not.toHaveClass('grid-cols-5');
+    expect(attachmentStrip).toHaveTextContent('notes.txt');
+  });
+});
+
+it('updates attachment-only changes while skipping an unchanged message row', () => {
+  const before = userMsg('unchanged text');
+  const formatTimestamp = vi.spyOn(before.timestamp, 'getFullYear');
+  const { container, rerender } = render(<Message message={before} />);
+  const renders = formatTimestamp.mock.calls.length;
+  rerender(<Message message={before} />);
+  expect(formatTimestamp).toHaveBeenCalledTimes(renders);
+  const next = {
+    ...before,
+    attachments: [
+      {
+        id: 'new-image',
+        name: 'receipt.png',
+        size: 10,
+        mimeType: 'image/png',
+        previewUrl: 'data:image/png;base64,abc',
+        isImage: true,
+      },
+    ],
+  };
+  rerender(<Message message={next} />);
+  const image = container.querySelector('img:not([data-file-icon-id])');
+  expect(image).not.toBeNull();
+  expect(formatTimestamp.mock.calls.length).toBeGreaterThan(renders);
+  const changed = {
+    ...next,
+    attachments: [{ ...next.attachments[0], previewUrl: 'data:image/png;base64,def' }],
+  };
+  rerender(<Message message={changed} />);
+  expect(container.querySelector('img:not([data-file-icon-id])')).toHaveAttribute(
+    'src',
+    'data:image/png;base64,def',
+  );
+  rerender(<Message message={{ ...changed, attachments: [] }} />);
+  expect(container.querySelector('img:not([data-file-icon-id])')).toBeNull();
+});

@@ -1,0 +1,97 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+const root = resolve(import.meta.dirname, '../../../..');
+
+function source(relativePath: string): string {
+  return readFileSync(resolve(root, relativePath), 'utf8');
+}
+
+describe('Task Center layout contract', () => {
+  it('keeps the thought panel fixed while allowing the task panel to shrink', () => {
+    const taskCenter = source('src/renderer/pages/TaskCenter.tsx');
+    const thoughtPanel = source('src/renderer/components/task-center/ThoughtPanel.tsx');
+
+    expect(taskCenter).toContain('flex min-w-0 flex-1 flex-col overflow-hidden');
+    expect(taskCenter).toContain('w-[480px] min-w-0 max-w-full shrink-0');
+    expect(thoughtPanel).toContain(
+      'box-border w-full min-w-0 max-w-full px-4 pb-3',
+    );
+  });
+
+  it('compacts the task toolbar without allowing its title to break', () => {
+    const panel = source('src/renderer/components/task-center/TaskListPanel.tsx');
+    const search = source('src/renderer/components/task-center/SearchPill.tsx');
+    const workspaceFilter = panel.slice(
+      panel.indexOf('{workspaceOptions.length > 2 && ('),
+      panel.indexOf('<SearchPill'),
+    );
+
+    expect(panel).toContain('@container/task-panel');
+    expect(panel).toContain('whitespace-nowrap text-base font-semibold');
+    expect(panel).toContain('sr-only @[720px]:not-sr-only');
+    expect(panel).toContain('collapseWhenNarrow');
+    expect(workspaceFilter).toContain('<CustomSelect\n              className=');
+    expect(workspaceFilter).not.toContain('<div\n              className=');
+    expect(search).toContain('<button');
+    expect(search).toContain("w-7 @[720px]:w-[var(--search-pill-collapsed-width)]");
+  });
+
+  it('keeps both task-card badges intact in narrow cards', () => {
+    const category = source('src/renderer/components/task-center/TaskCategoryBadge.tsx');
+    const status = source('src/renderer/components/task-center/TaskStatusBadge.tsx');
+
+    expect(category).toContain('inline-flex shrink-0 items-center gap-1 whitespace-nowrap');
+    expect(status).toContain('inline-flex shrink-0 items-center gap-1 whitespace-nowrap');
+  });
+
+  it('uses one task-card column until the task panel has enough room for two', () => {
+    const panel = source('src/renderer/components/task-center/TaskListPanel.tsx');
+
+    expect(panel).toContain(
+      'grid grid-cols-1 gap-3 @[560px]:grid-cols-2 @[900px]:grid-cols-3',
+    );
+  });
+
+  it('keeps Task Center thought prose compact without shrinking the Launcher composer', () => {
+    const input = source('src/renderer/components/task-center/ThoughtInput.tsx');
+    const card = source('src/renderer/components/task-center/ThoughtCard.tsx');
+    const compactVariant = input.slice(
+      input.indexOf('compact: {'),
+      input.indexOf('launcher: {'),
+    );
+    const launcherVariant = input.slice(input.indexOf('launcher: {'));
+
+    expect(compactVariant).toContain('pxPerLine: 23');
+    expect(compactVariant).toContain("textareaClass: 'text-sm leading-relaxed'");
+    expect(launcherVariant).toContain('pxPerLine: 26');
+    expect(launcherVariant).toContain("textareaClass: 'text-base leading-relaxed'");
+    expect(input).toContain(
+      "variant === 'launcher' ? 'h-8 px-2.5' : 'h-7 px-2'",
+    );
+    expect(card).toContain(
+      'bg-transparent text-sm leading-relaxed text-[var(--ink)]',
+    );
+    expect(card).toContain(
+      'break-words text-sm leading-relaxed text-[var(--ink-secondary)]',
+    );
+    expect(card).toContain(
+      'bg-[var(--accent-warm-subtle)] px-1 text-xs text-[var(--accent-warm)]',
+    );
+  });
+
+  it('keeps Task Center as the idea surface and starts recording through App', () => {
+    const taskCenter = source('src/renderer/pages/TaskCenter.tsx');
+    const thoughtPanel = source('src/renderer/components/task-center/ThoughtPanel.tsx');
+    const app = source('src/renderer/App.tsx');
+
+    expect(thoughtPanel).toContain("t('thoughts.centerTitle')");
+    expect(thoughtPanel).toContain("t('thoughts.centerInputPlaceholder')");
+    expect(taskCenter).toContain(
+      'onStartRecording ? handleRequestRecording : undefined',
+    );
+    expect(app).toContain("tab.id === tabId && tab.view === 'taskcenter'");
+    expect(app).toContain('openInNewTab,');
+  });
+});

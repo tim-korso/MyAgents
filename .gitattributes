@@ -1,0 +1,9 @@
+LICENSE text eol=lf
+src-tauri/media-worker/model-pack-source-lock.json text eol=lf
+src-tauri/media-worker/compatible-model-packs/*.json text eol=lf
+
+# Resource signatures cover exact bytes; Windows checkout must preserve LF.
+.github/cliproxy/manifest-v1.json text eol=lf
+.github/cliproxy/manifest-v1.json.sig text eol=lf
+src-tauri/src/cliproxy/fixtures/internal-manifest.json text eol=lf
+src-tauri/src/cliproxy/fixtures/internal-manifest.json.sig text eol=lf

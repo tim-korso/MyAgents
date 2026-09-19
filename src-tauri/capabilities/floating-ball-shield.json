@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "floating-ball-shield",
+  "description": "Minimal IPC access for the transparent floating-ball outside-click shield.",
+  "windows": [
+    "fb-shield"
+  ],
+  "permissions": [
+    "core:default"
+  ]
+}

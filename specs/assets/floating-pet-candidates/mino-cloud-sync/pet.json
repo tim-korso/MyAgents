@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "mino-cloud-sync",
+  "displayName": "Mino Cloud Sync",
+  "description": "Cloud and Git-branch visual for multi-machine continuity.",
+  "author": "MyAgents / image-gen reference / deterministic hatch-pet repair",
+  "license": "Candidate asset - internal review before distribution",
+  "spritesheetPath": "spritesheet.webp"
+}

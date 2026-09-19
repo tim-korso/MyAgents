@@ -1,0 +1,229 @@
+import React from 'react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { DEFAULT_CONFIG, PROXY_DEFAULTS, PRESET_PROVIDERS, type AppConfig } from './types';
+import { ConfigProvider } from './ConfigProvider';
+import { useConfigActions } from './useConfigActions';
+import { useConfigData } from './useConfigData';
+
+const mocks = vi.hoisted(() => ({
+    invoke: vi.fn(),
+    atomicModifyConfig: vi.fn(),
+    platform: 'darwin-aarch64',
+    loadAppConfig: vi.fn(),
+    loadProjects: vi.fn(),
+    statusPromise: undefined as Promise<void> | undefined,
+    resolveStatus: undefined as (() => void) | undefined,
+    downloadPromise: undefined as Promise<never> | undefined,
+    rejectDownload: undefined as ((error: Error) => void) | undefined,
+}));
+
+vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
+vi.mock('@/identity/deviceIdentity', () => ({ getPlatform: () => mocks.platform }));
+vi.mock('@/utils/browserMock', () => ({ isTauriEnvironment: () => true }));
+vi.mock('@/utils/tauriListen', () => ({ listenWithCleanup: vi.fn(async () => {}) }));
+vi.mock('@/api/apiFetch', () => ({ apiGetJson: vi.fn(async () => ({ models: [] })) }));
+vi.mock('./services/configStore', () => ({
+    isLockBusyError: (error: unknown) => (
+        !!error && typeof error === 'object' && 'code' in error && String(error.code).endsWith('BUSY')
+    ),
+    withAgentConfigIntentLock: vi.fn(async <T,>(run: () => Promise<T>) => run()),
+    withProjectsLock: vi.fn(async <T,>(run: () => Promise<T>) => run()),
+}));
+
+vi.mock('./services/appConfigService', () => ({
+    loadAppConfig: mocks.loadAppConfig,
+    atomicModifyConfig: mocks.atomicModifyConfig,
+    ensureBundledWorkspace: vi.fn(async () => {}),
+    ensureManagedCodexProviderDevGateDefault: vi.fn(async () => {}),
+    mergePresetCustomModels: vi.fn((providers: unknown[]) => providers),
+}));
+
+vi.mock('./services/providerService', () => ({
+    getAllProviders: vi.fn(async () => PRESET_PROVIDERS),
+    loadApiKeys: vi.fn(async () => ({})),
+    saveApiKey: vi.fn(),
+    deleteApiKey: vi.fn(),
+    loadProviderVerifyStatus: vi.fn(async () => ({})),
+    saveProviderVerifyStatus: vi.fn(),
+    saveCustomProvider: vi.fn(),
+    deleteCustomProvider: vi.fn(),
+    rebuildAndPersistAvailableProviders: vi.fn(async () => {}),
+}));
+
+vi.mock('./services/projectService', () => ({
+    loadProjects: mocks.loadProjects,
+    saveProjects: vi.fn(async () => {}),
+    addProject: vi.fn(),
+    updateProject: vi.fn(),
+    patchProject: vi.fn(),
+    removeOrHideProject: vi.fn(),
+    touchProject: vi.fn(),
+}));
+
+vi.mock('./services/agentConfigService', () => ({
+    configureMemoryAutoUpdateTaskForAgent: vi.fn(),
+    configureMemoryEvolutionTasksForAgent: vi.fn(),
+    migrateImBotConfigsToAgents: vi.fn((config: object) => config),
+    persistAgents: vi.fn(async () => {}),
+    reconcilePersistedAgentWorkspaceIdentities: vi.fn(async () => ({
+        config: {}, projects: [], changed: false, createdAgents: [],
+    })),
+    reconcilePersistedAgentWorkspaceIdentitiesLocked: vi.fn(),
+}));
+
+describe('ConfigProvider Managed Codex startup update lifecycle', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        mocks.platform = 'darwin-aarch64';
+        mocks.atomicModifyConfig.mockImplementation(async (modify: (config: object) => object) => modify({}));
+        mocks.loadProjects.mockResolvedValue([]);
+        mocks.loadAppConfig.mockImplementation(async () => ({
+            ...DEFAULT_CONFIG,
+            agents: [],
+            managedCodexProviderDevGate: true,
+            managedCodexRuntimeInstall: {
+                status: 'error',
+                usable: true,
+                installedVersion: '0.0.0-previous',
+            },
+            managedCodexAuth: {
+                status: 'valid',
+                authMethod: 'chatgpt',
+            },
+        }));
+        mocks.statusPromise = new Promise<void>(resolve => {
+            mocks.resolveStatus = resolve;
+        });
+        mocks.downloadPromise = new Promise<never>((_, reject) => {
+            mocks.rejectDownload = reject;
+        });
+        mocks.invoke.mockImplementation(async (command: string) => {
+            if (command === 'cmd_managed_codex_status') {
+                return mocks.statusPromise;
+            }
+            if (command === 'cmd_managed_codex_download') {
+                return mocks.downloadPromise;
+            }
+            return undefined;
+        });
+    });
+
+    function UpdateStateProbe() {
+        const { managedCodexRuntimeUpdateInFlight } = useConfigData();
+        const { requestManagedCodexRuntimeUpdate } = useConfigActions();
+        return (
+            <>
+                <div data-testid="managed-codex-update-in-flight">
+                    {String(managedCodexRuntimeUpdateInFlight)}
+                </div>
+                <button
+                    type="button"
+                    onClick={() => void requestManagedCodexRuntimeUpdate().catch(() => {})}
+                >
+                    request update
+                </button>
+            </>
+        );
+    }
+
+    it('Linux preserves saved config while excluding unsupported providers and runtime actions', async () => {
+        mocks.platform = 'linux-x86_64';
+        function LinuxProbe() {
+            const { providers, config, isLoading } = useConfigData();
+            return <div data-testid="linux-projection">{JSON.stringify({
+                ids: providers.map(provider => provider.id), gate: config.managedCodexProviderDevGate, isLoading,
+            })}</div>;
+        }
+        const view = render(<ConfigProvider><UpdateStateProbe /><LinuxProbe /></ConfigProvider>);
+        await waitFor(() => expect(JSON.parse(screen.getByTestId('linux-projection').textContent!).isLoading).toBe(false));
+        const projection = JSON.parse(screen.getByTestId('linux-projection').textContent!);
+        expect(projection.gate).toBe(true);
+        expect(projection.ids).not.toContain('codex-sub');
+        expect(projection.ids).not.toContain('antigravity-sub');
+        expect(projection.ids.length).toBeGreaterThan(0);
+        fireEvent.click(screen.getByRole('button', { name: 'request update' }));
+        await waitFor(() => expect(screen.getByTestId('managed-codex-update-in-flight')).toHaveTextContent('false'));
+        expect(mocks.invoke.mock.calls.filter(([command]) => String(command).startsWith('cmd_managed_codex'))).toHaveLength(0);
+        view.unmount();
+    });
+
+    it('merges Linux order and proxy edits with hidden preferences read inside the config lock', async () => {
+        mocks.platform = 'linux-x86_64';
+        let disk: AppConfig = { ...DEFAULT_CONFIG, agents: [],
+            providerOrder: ['anthropic', 'codex-sub', 'deepseek', 'antigravity-sub'],
+            disabledProviderIds: ['codex-sub'],
+            proxySettings: { ...PROXY_DEFAULTS, enabled: true, scope: { mode: 'custom', generalRequests: false, providerIds: ['codex-sub'] } },
+        };
+        mocks.loadAppConfig.mockImplementation(async () => disk);
+        mocks.atomicModifyConfig.mockImplementation(async (modify: (config: AppConfig) => AppConfig) => {
+            disk = modify(disk);
+            return disk;
+        });
+        function EditProbe() {
+            const { isLoading, config } = useConfigData();
+            const { updateConfig, patchProxySettings } = useConfigActions();
+            return <><span data-testid="saved-preferences">{JSON.stringify({ isLoading, config })}</span>
+                <button onClick={async () => {
+                    await updateConfig({ providerOrder: ['deepseek', 'anthropic'], disabledProviderIds: undefined });
+                    await patchProxySettings({ scope: { mode: 'custom', generalRequests: true, providerIds: ['anthropic'] } });
+                }}>save visible preferences</button></>;
+        }
+        const view = render(<ConfigProvider><EditProbe /></ConfigProvider>);
+        await waitFor(() => expect(JSON.parse(screen.getByTestId('saved-preferences').textContent!).isLoading).toBe(false));
+        // Another writer changes hidden preferences after this Settings snapshot.
+        disk = { ...disk, disabledProviderIds: ['antigravity-sub'], proxySettings: { ...PROXY_DEFAULTS, enabled: true,
+            scope: { mode: 'custom', generalRequests: false, providerIds: ['antigravity-sub'] } } };
+        fireEvent.click(screen.getByRole('button', { name: 'save visible preferences' }));
+        await waitFor(() => expect(disk.proxySettings?.scope?.generalRequests).toBe(true));
+        expect(disk.providerOrder).toEqual(['deepseek', 'codex-sub', 'anthropic', 'antigravity-sub']);
+        expect(disk.disabledProviderIds).toEqual(['antigravity-sub']);
+        expect(disk.proxySettings?.scope?.providerIds).toEqual(['antigravity-sub', 'anthropic']);
+        view.unmount();
+    });
+
+    it('attempts once per App module, without looping after refresh or React remount', async () => {
+        const first = render(<ConfigProvider><UpdateStateProbe /></ConfigProvider>);
+
+        await waitFor(() => expect(screen.getByTestId('managed-codex-update-in-flight')).toHaveTextContent('true'));
+        expect(mocks.invoke.mock.calls.filter(([command]) => (
+            command === 'cmd_managed_codex_download'
+        ))).toHaveLength(0);
+        fireEvent.click(screen.getByRole('button', { name: 'request update' }));
+        expect(mocks.invoke.mock.calls.filter(([command]) => (
+            command === 'cmd_managed_codex_download'
+        ))).toHaveLength(0);
+
+        mocks.resolveStatus?.();
+        await waitFor(() => {
+            expect(mocks.invoke.mock.calls.filter(([command]) => (
+                command === 'cmd_managed_codex_download'
+            ))).toHaveLength(1);
+        });
+        const invokedCommands = mocks.invoke.mock.calls.map(([command]) => command);
+        expect(invokedCommands.indexOf('cmd_managed_codex_status'))
+            .toBeLessThan(invokedCommands.indexOf('cmd_managed_codex_download'));
+
+        first.unmount();
+        const loadsBeforeRemount = mocks.loadAppConfig.mock.calls.length;
+        render(<ConfigProvider><UpdateStateProbe /></ConfigProvider>);
+        await waitFor(() => expect(screen.getByTestId('managed-codex-update-in-flight')).toHaveTextContent('true'));
+        fireEvent.click(screen.getByRole('button', { name: 'request update' }));
+        expect(mocks.invoke.mock.calls.filter(([command]) => (
+            command === 'cmd_managed_codex_download'
+        ))).toHaveLength(1);
+
+        mocks.rejectDownload?.(new Error('offline'));
+        await waitFor(() => expect(screen.getByTestId('managed-codex-update-in-flight')).toHaveTextContent('false'));
+        await waitFor(() => expect(mocks.loadAppConfig.mock.calls.length).toBeGreaterThanOrEqual(3));
+        expect(mocks.invoke.mock.calls.filter(([command]) => (
+            command === 'cmd_managed_codex_download'
+        ))).toHaveLength(1);
+
+        await waitFor(() => expect(mocks.loadAppConfig.mock.calls.length).toBeGreaterThan(loadsBeforeRemount));
+        expect(mocks.invoke.mock.calls.filter(([command]) => (
+            command === 'cmd_managed_codex_download'
+        ))).toHaveLength(1);
+    });
+});

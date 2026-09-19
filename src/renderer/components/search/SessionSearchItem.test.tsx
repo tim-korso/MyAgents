@@ -1,0 +1,134 @@
+import { fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import type { SessionSearchHit } from '@/api/searchClient';
+import type { SessionMetadata } from '@/api/sessionClient';
+import type { Project } from '@/config/types';
+
+import SessionSearchItem from './SessionSearchItem';
+
+function hit(overrides: Partial<SessionSearchHit> = {}): SessionSearchHit {
+    return {
+        session: session(),
+        sessionId: 's1',
+        title: 'Search Hit',
+        agentDir: '/workspace',
+        score: 1,
+        matchType: 'title',
+        snippet: null,
+        snippetHighlights: [],
+        titleHighlights: [],
+        matchedRole: null,
+        lastActiveAt: new Date(2026, 5, 20, 8, 0).toISOString(),
+        source: 'desktop',
+        turnCount: 1,
+        ...overrides,
+    };
+}
+
+function session(overrides: Partial<SessionMetadata> = {}): SessionMetadata {
+    return {
+        id: 's1',
+        agentDir: '/workspace',
+        title: 'Search Hit',
+        createdAt: new Date(2026, 5, 19, 18, 0).toISOString(),
+        lastActiveAt: new Date(2026, 5, 19, 22, 0).toISOString(),
+        ...overrides,
+    };
+}
+
+const project: Project = {
+    id: 'p1',
+    name: 'Workspace',
+    path: '/workspace',
+    providerId: null,
+    permissionMode: null,
+};
+
+describe('SessionSearchItem', () => {
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it('keeps the query snapshot date when live metadata has a different activity date', () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date(2026, 5, 20, 9, 0));
+
+        render(
+            <SessionSearchItem
+                hit={hit()}
+                session={session()}
+                project={project}
+                deleteProtected={false}
+                onClick={vi.fn()}
+                onContextMenu={vi.fn()}
+                onShowStats={vi.fn()}
+                onDelete={vi.fn()}
+            />,
+        );
+
+        expect(screen.getByText('08:00')).toBeInTheDocument();
+        expect(screen.queryByText('昨天')).not.toBeInTheDocument();
+    });
+
+    it('shows a canonical renamed title before the search index catches up', () => {
+        render(
+            <SessionSearchItem
+                hit={hit({ title: 'Stale indexed title', titleHighlights: [[0, 5]] })}
+                session={session({ title: 'Canonical renamed title' })}
+                project={project}
+                deleteProtected={false}
+                onClick={vi.fn()}
+                onContextMenu={vi.fn()}
+                onShowStats={vi.fn()}
+                onDelete={vi.fn()}
+            />,
+        );
+
+        expect(screen.getByText('Canonical renamed title')).toBeInTheDocument();
+        expect(screen.queryByText('Stale indexed title')).not.toBeInTheDocument();
+    });
+
+    it.each(['2025-02-03T04:00:00Z', 'invalid'])('disambiguates old or unknown activity dates: %s', (date) => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date(2026, 5, 20, 9, 0));
+        const { container } = render(<SessionSearchItem hit={hit({ lastActiveAt: date })} session={session()}
+            project={project} deleteProtected={false} onClick={vi.fn()} onContextMenu={vi.fn()}
+            onShowStats={vi.fn()} onDelete={vi.fn()} />);
+        if (date === 'invalid') {
+            expect(container.querySelector('time')).not.toHaveAttribute('datetime');
+            expect(container.textContent).not.toContain('Invalid Date');
+        } else {
+            expect(container.querySelector('time')).toHaveTextContent('2025');
+            expect(container.querySelector('time')).toHaveAttribute('datetime', new Date(date).toISOString());
+        }
+    });
+
+    it('suppresses right-click selection and forwards the context-menu request', () => {
+        const onContextMenu = vi.fn((event: React.MouseEvent) => event.preventDefault());
+        render(
+            <SessionSearchItem
+                hit={hit()}
+                session={session()}
+                project={project}
+                deleteProtected={false}
+                onClick={vi.fn()}
+                onContextMenu={onContextMenu}
+                onShowStats={vi.fn()}
+                onDelete={vi.fn()}
+            />,
+        );
+
+        const row = screen.getByText('Search Hit').closest<HTMLElement>('[data-history-search-session-row]')!;
+        expect(row).toHaveClass('select-none');
+
+        const mouseDown = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 2 });
+        fireEvent(row, mouseDown);
+        expect(mouseDown.defaultPrevented).toBe(true);
+
+        const contextMenu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 });
+        fireEvent(row, contextMenu);
+        expect(contextMenu.defaultPrevented).toBe(true);
+        expect(onContextMenu).toHaveBeenCalledOnce();
+    });
+});

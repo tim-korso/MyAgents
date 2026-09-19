@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "mino-pixel",
+  "displayName": "Mino Pixel",
+  "description": "像素重绘版 Mino，小方块里装着大精神，复古但不掉帧。",
+  "author": "MyAgents",
+  "license": "Apache-2.0",
+  "spritesheetPath": "spritesheet.webp"
+}

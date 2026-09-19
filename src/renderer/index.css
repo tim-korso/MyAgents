@@ -1,0 +1,1214 @@
+@import 'tailwindcss';
+
+/* @tailwindcss/typography 已于 v2.4 移除：其 prose 字阶（h1=2em/700 等）与产品
+   Type Scale 冲突，5 个 markdown 预览面板已统一改用 .ai-message-content + 自家
+   <Markdown> 组件（PRD 0.2.34 Part 2 F4）。 */
+
+/* Class-based dark mode: `.dark` class on <html> activates dark: utilities.
+   ThemeProvider manages the class based on user preference (light/dark/system). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Tailwind owns utility generation at build time while Theme packages own all
+   runtime visual values. Keep this bridge value-free: `inline` makes every
+   generated utility (including hover/dark variants) read the active Theme's
+   semantic runtime token instead of freezing Tailwind's defaults. The
+   separate `--theme-*` radius/shadow namespace avoids self-referential custom
+   properties such as `--shadow-sm: var(--shadow-sm)`. */
+@theme inline {
+  --font-sans: var(--font-body);
+  --font-mono: var(--font-code);
+
+  --radius-*: initial;
+  --radius: var(--theme-radius-base);
+  --radius-sm: var(--theme-radius-sm);
+  --radius-md: var(--theme-radius-md);
+  --radius-lg: var(--theme-radius-lg);
+  --radius-xl: var(--theme-radius-xl);
+  --radius-2xl: var(--theme-radius-2xl);
+  --radius-full: var(--theme-radius-full);
+
+  --shadow-*: initial;
+  --shadow: var(--theme-shadow-base);
+  --shadow-xs: var(--theme-shadow-xs);
+  --shadow-sm: var(--theme-shadow-sm);
+  --shadow-md: var(--theme-shadow-md);
+  --shadow-lg: var(--theme-shadow-lg);
+  --shadow-xl: var(--theme-shadow-xl);
+  --shadow-2xl: var(--theme-shadow-2xl);
+
+  --default-transition-duration: var(--duration-fast);
+  --transition-duration-150: var(--duration-fast);
+  --transition-duration-200: var(--duration-normal);
+  --transition-duration-300: var(--duration-slow);
+}
+
+/* Markdown lives in a separately loaded stylesheet. Keep its reading roles
+   emitted even when Tailwind cannot discover their use in a utility class. */
+@theme static {
+  --font-weight-prose: 500;
+  --font-weight-emphasis: 600;
+  --font-weight-normal: 400;
+}
+
+/* Product Type Scale; Theme-owned values stay in the registered Theme package. */
+@theme {
+  /* Type Scale — 单一真相源（PRD 0.2.34 Part 1-3，档位职责见 DESIGN.md §3.3）。
+     v2.5 终局七档（等距 2px 步进至 18）：12/14/16/18/20/22/28。
+     Part 3 双合并：11(micro)+12(caption)→12；13(ui)+14(dense)→14——
+     text-xs/text-sm 自此回归 Tailwind 官方值，同名异值仅剩两条：text-2xl=22(官方24)、text-3xl=28(官方30)。
+     已删除档位：--text-2xs(10)、--text-2sm(12)、--text-md(14)——类名已死，
+     写了等于没样式（eslint 封禁防静默腐坏）。
+     新场景先归档位，禁止 text-[Npx] 任意字面量（eslint 强制）。 */
+  --text-xs: 12px; /* micro/caption: 时间戳、badge、描述行、hint、分类头(uppercase) */
+  --text-xs--line-height: 1.45;
+  --text-sm: 14px; /* ui/dense: 按钮、菜单、树节点、tab、工具卡、控制台、Markdown 表格 */
+  --text-sm--line-height: 1.5;
+  --text-base: 16px; /* prose: AI 正文、用户气泡、输入框、widget body */
+  --text-base--line-height: 1.7;
+  --text-lg: 18px; /* Markdown H3、弹窗标题 */
+  --text-lg--line-height: 1.5;
+  --text-xl: 20px; /* Markdown H2 */
+  --text-xl--line-height: 1.4;
+  --text-2xl: 22px; /* Markdown H1 */
+  --text-2xl--line-height: 1.3;
+  --text-3xl: 28px; /* stat: 数据大数字（占用率百分比等）、页面大标题 */
+  --text-3xl--line-height: 1.2;
+  --text-brand: 56px; /* 品牌展示（Launcher） */
+  --text-brand--line-height: 1.1;
+}
+
+/* Custom titlebar styles for frameless window */
+/* NOTE: Do NOT use -webkit-app-region: drag - it conflicts with Tauri's data-tauri-drag-region on macOS */
+.custom-titlebar {
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
+/* All elements in titlebar have default cursor by default */
+.custom-titlebar * {
+  cursor: default;
+}
+
+/* Buttons have pointer cursor */
+.custom-titlebar button,
+.custom-titlebar button * {
+  cursor: pointer !important;
+}
+
+/* Overlay entry animations */
+@keyframes overlayFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes overlayPanelIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Popover drop-down animation */
+@keyframes popoverIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Composer toolbar menus are portaled and positioned with Floating UI's
+   transform. Animate the independent translate property so entry motion
+   never overrides that positioning transform. A vertical-only reveal avoids
+   the sideways growth produced by scaling from a left-aligned origin. */
+@keyframes composerToolbarMenuIn {
+  from {
+    opacity: 0;
+    translate: 0 6px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+.composer-toolbar-menu-enter {
+  animation: composerToolbarMenuIn var(--duration-normal) cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-toolbar-menu-enter {
+    animation: none;
+  }
+}
+
+/* Toast slide-down animation */
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Scroll anchoring for smoother streaming experience */
+.scroll-anchor-auto {
+  overflow-anchor: auto;
+}
+
+.scroll-anchor {
+  overflow-anchor: auto;
+}
+
+/* Hide rewind buttons during AI streaming — controlled via data attribute on the
+   scroll container instead of per-message React prop, eliminating mass re-renders
+   of all N history messages when streaming state changes. */
+[data-streaming="true"] [data-rewind-btn] {
+  display: none;
+}
+
+/* ── Streaming leading-edge fade ──
+   While streaming, a rehype plugin (Markdown.tsx::rehypeStreamTail) wraps the LAST few
+   characters of the last text node in <span class="md-stream-tail">. The horizontal mask
+   fades them left→opaque to right→faint, so freshly-typed text emerges softly instead of
+   hard-popping (replaces the old caret). As the data-layer typewriter reveals more, the
+   tail window slides, so each character fades in over a few reveal steps. The class only
+   exists mid-stream → the final render is crisp. mask-image alpha values are taste params. */
+.md-stream-tail {
+  -webkit-mask-image: linear-gradient(to right, #000 0%, #000 35%, rgba(0, 0, 0, 0.2) 100%);
+  mask-image: linear-gradient(to right, #000 0%, #000 35%, rgba(0, 0, 0, 0.2) 100%);
+}
+@media (prefers-reduced-motion: reduce) {
+  .md-stream-tail { -webkit-mask-image: none; mask-image: none; }
+}
+
+:root {
+  /* Layout and spacing are product structure, not Theme identity. */
+  --breakpoint-mobile: 640px;
+  --global-sidebar-expanded-width: 256px;
+  --global-sidebar-flyout-width: 320px;
+  --global-sidebar-rail-width: 64px;
+  --global-sidebar-toggle-left: 84px;
+  --global-sidebar-tabbar-toggle-inset: 60px;
+  --global-sidebar-tab-content-shift: 140px;
+  --global-sidebar-tab-content-shift-negative: -140px;
+  --global-sidebar-content-center-shift: 96px;
+  --global-sidebar-content-center-shift-negative: -96px;
+  --global-sidebar-brand-icon-size: 20px;
+  --global-sidebar-brand-icon-left: 22px;
+  --global-sidebar-rail-button-left: 12px;
+  --sidebar-min-width: 320px;
+  --chat-workspace-panel-width: max(25%, var(--sidebar-min-width));
+  --chat-workspace-min-center-shift: 160px;
+  --chat-workspace-min-center-shift-negative: -160px;
+  --header-height: 48px;
+  --space-0: 0;
+  --space-0-5: 2px;
+  --space-1: 4px;
+  --space-1-5: 6px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+}
+
+/* The compact website link owns the App Icon and wordmark in one normal-flow
+   box. Its 40px hit target shares x=12px with rail controls; a 10px inner
+   inset centers the 20px App Icon on the functional glyph axis at x=32px.
+   The 10px wordmark gap preserves the expanded label's established x=52px. */
+.global-sidebar-brand-link {
+  position: absolute;
+  top: var(--space-1);
+  left: var(--global-sidebar-rail-button-left);
+  column-gap: calc(var(--space-2) + var(--space-0-5));
+  padding-left: calc(
+    var(--global-sidebar-brand-icon-left) - var(--global-sidebar-rail-button-left)
+  );
+}
+
+.global-sidebar-brand-icon {
+  width: var(--global-sidebar-brand-icon-size);
+  height: var(--global-sidebar-brand-icon-size);
+  border-radius: 22%;
+}
+
+/* Sidebar layout reaches its final 256px/64px slot in one commit so Chat,
+   Browser, Terminal, and other resize-sensitive surfaces do not reflow on
+   every animation frame. A fixed paint-only material layer then reveals or
+   retracts the Theme surface at the same boundary the user perceives. */
+.global-sidebar {
+  isolation: isolate;
+}
+
+.global-sidebar::before {
+  position: absolute;
+  z-index: -1;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--global-sidebar-expanded-width);
+  background: var(--global-sidebar-surface);
+  clip-path: inset(0 0 0 0);
+  content: '';
+  pointer-events: none;
+  transition: clip-path var(--duration-normal) var(--ease-in-out);
+}
+
+.global-sidebar[data-global-sidebar-mode='rail']::before {
+  clip-path: inset(
+    0
+    calc(var(--global-sidebar-expanded-width) - var(--global-sidebar-rail-width))
+    0
+    0
+  );
+}
+
+.global-sidebar-copy {
+  opacity: 1;
+  clip-path: inset(0 0 0 0);
+  transform: translateX(0);
+  transition:
+    opacity var(--duration-fast) var(--ease-default),
+    clip-path var(--duration-normal) var(--ease-in-out),
+    transform var(--duration-normal) var(--ease-in-out);
+}
+
+.global-sidebar-nav-label {
+  position: absolute;
+  left: 40px;
+  width: calc(var(--global-sidebar-expanded-width) - 64px);
+  pointer-events: none;
+}
+
+.global-sidebar-nav-tip {
+  display: flex;
+}
+
+/* Keep row shape compact without changing Theme radii outside the sidebar. */
+.global-sidebar-row {
+  border-radius: min(var(--radius-lg), var(--space-2));
+}
+
+/* One row surface drives both the resource and its action mask. Selection
+   wins over pointer/menu focus; it remains distinct while another row hovers. */
+.global-sidebar-resource-row {
+  --global-sidebar-row-bg: transparent;
+  background-color: var(--global-sidebar-row-bg);
+}
+
+.global-sidebar-resource-row:is(:hover, :focus-within, [data-menu-open='true']) {
+  --global-sidebar-row-bg: var(--hover-bg);
+}
+
+.global-sidebar-resource-row[aria-current='page'] {
+  --global-sidebar-row-bg: var(--paper-inset);
+}
+
+.global-sidebar-resource-row[aria-current='page']::before {
+  position: absolute;
+  top: calc(var(--space-2) + var(--space-0-5));
+  bottom: calc(var(--space-2) + var(--space-0-5));
+  left: 0;
+  width: var(--space-0-5);
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  content: '';
+  pointer-events: none;
+}
+
+.global-sidebar-workspace-actions {
+  border-top-right-radius: inherit;
+  border-bottom-right-radius: inherit;
+  /* Composite the same translucent hover over the actual host surface.
+     The rail flyout supplies paper-elevated; the sidebar supplies its chrome.
+     Layering avoids a guessed accent mix and works without color-mix support. */
+  background:
+    linear-gradient(to right, transparent, var(--global-sidebar-row-bg) var(--space-6)),
+    linear-gradient(to right, transparent, var(--global-sidebar-surface) var(--space-6));
+}
+
+.global-sidebar[data-global-sidebar-mode='rail'] .global-sidebar-copy {
+  opacity: 0;
+  clip-path: inset(0 100% 0 0);
+  transform: translateX(-6px);
+}
+
+[data-global-sidebar-workspace-region] {
+  animation: global-sidebar-expanded-content-in var(--duration-normal) var(--ease-in-out) both;
+}
+
+.global-sidebar[data-global-sidebar-mode='rail'] [data-global-sidebar-workspace-region] {
+  pointer-events: none;
+  animation-name: global-sidebar-expanded-content-out;
+}
+
+[data-global-sidebar-workspace-rail] {
+  animation: global-sidebar-rail-content-in var(--duration-normal) var(--ease-out) both;
+}
+
+/* Expanded navigation places each 16px glyph at x=24px (12px section inset
+   + 12px button inset). Rail buttons keep the same glyph coordinate by
+   anchoring their 40px hit targets at x=12px instead of re-centering them in
+   the 64px strip. Their x=32px center is therefore also the rail center. Apply
+   this to every rail stack so collapse never shifts a
+   subset of controls. */
+.global-sidebar-rail-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding-right: var(--global-sidebar-rail-button-left);
+  padding-left: var(--global-sidebar-rail-button-left);
+}
+
+[data-global-sidebar-flyout] {
+  animation: global-sidebar-flyout-in 140ms ease-out;
+  transform-origin: left center;
+}
+
+/* In manual macOS rail mode the single sidebar toggle keeps its window-fixed
+   x coordinate and visually moves onto the Tab titlebar surface. Reserve that
+   exact leading slot plus the titlebar's normal 8px content inset so the first
+   Tab never renders underneath or directly against the control. */
+[data-global-sidebar-tabbar-toggle='true'] ~ [data-tab-workspace]
+  > .custom-titlebar {
+  padding-left: var(--global-sidebar-tabbar-toggle-inset);
+}
+
+/* The layout slot still resolves in one commit. These FLIP-style compositor
+   offsets preserve the previous visual center while the sidebar material
+   boundary catches up, so the titlebar and active Tab feel attached to it. */
+[data-global-sidebar-motion='collapse'] ~ [data-tab-workspace]
+  > .custom-titlebar {
+  --app-shell-follow-offset: var(--global-sidebar-tab-content-shift);
+  animation: app-shell-sidebar-follow var(--duration-normal) var(--ease-in-out) backwards;
+}
+
+[data-global-sidebar-motion='expand'] ~ [data-tab-workspace]
+  > .custom-titlebar {
+  --app-shell-follow-offset: var(--global-sidebar-tab-content-shift-negative);
+  animation: app-shell-sidebar-follow var(--duration-normal) var(--ease-in-out) backwards;
+}
+
+/* Windows keeps the toggle inside the rail, so its Tab row travels the full
+   256px → 64px delta. macOS grows its rail titlebar reservation to 60px, which
+   keeps the first Tab at the established window x=124px and preserves the
+   smaller 140px compositor offset above. */
+[data-global-sidebar-titlebar-follow='full'][data-global-sidebar-motion='collapse']
+  ~ [data-tab-workspace] > .custom-titlebar {
+  --app-shell-follow-offset: calc(
+    var(--global-sidebar-expanded-width) - var(--global-sidebar-rail-width)
+  );
+}
+
+[data-global-sidebar-titlebar-follow='full'][data-global-sidebar-motion='expand']
+  ~ [data-tab-workspace] > .custom-titlebar {
+  --app-shell-follow-offset: calc(
+    var(--global-sidebar-rail-width) - var(--global-sidebar-expanded-width)
+  );
+}
+
+[data-global-sidebar-motion='collapse'] ~ [data-tab-workspace]
+  > [data-tab-content-workspace] {
+  --app-shell-follow-offset: var(--global-sidebar-content-center-shift);
+  animation: app-shell-sidebar-follow var(--duration-normal) var(--ease-in-out) backwards;
+}
+
+[data-global-sidebar-motion='expand'] ~ [data-tab-workspace]
+  > [data-tab-content-workspace] {
+  --app-shell-follow-offset: var(--global-sidebar-content-center-shift-negative);
+  animation: app-shell-sidebar-follow var(--duration-normal) var(--ease-in-out) backwards;
+}
+
+@keyframes global-sidebar-flyout-in {
+  from { opacity: 0; transform: translateX(-4px) scale(0.99); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
+}
+
+@keyframes global-sidebar-expanded-content-in {
+  from {
+    opacity: 0;
+    clip-path: inset(
+      0
+      calc(var(--global-sidebar-expanded-width) - var(--global-sidebar-rail-width))
+      0
+      0
+    );
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    transform: translateX(0);
+  }
+}
+
+@keyframes global-sidebar-expanded-content-out {
+  from {
+    opacity: 1;
+    clip-path: inset(0 0 0 0);
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    clip-path: inset(
+      0
+      calc(var(--global-sidebar-expanded-width) - var(--global-sidebar-rail-width))
+      0
+      0
+    );
+    transform: translateX(-6px);
+  }
+}
+
+@keyframes global-sidebar-rail-content-in {
+  from { opacity: 0; transform: translateX(-4px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes app-shell-sidebar-follow {
+  from { transform: translateX(var(--app-shell-follow-offset)); }
+  to { transform: translateX(0); }
+}
+
+/* Chat mirrors the App Shell choreography on the right: the workspace material
+   moves at the edge while the conversation keeps its prior visual center and
+   settles into the final one-shot flex layout. Overlay mode only moves the
+   panel because it does not resize the conversation. */
+[data-chat-workspace-panel-motion='expand'] {
+  animation: chat-workspace-panel-expand var(--duration-normal) var(--ease-in-out) backwards;
+}
+
+[data-chat-workspace-panel-motion='collapse'] {
+  animation: chat-workspace-panel-collapse var(--duration-normal) var(--ease-in-out) forwards;
+}
+
+[data-chat-workspace-motion='expand'] > [data-chat-conversation] {
+  --chat-workspace-follow-offset: max(16.6667%, var(--chat-workspace-min-center-shift));
+  animation: chat-workspace-conversation-follow var(--duration-normal) var(--ease-in-out) backwards;
+}
+
+[data-chat-workspace-motion='collapse'] > [data-chat-conversation] {
+  --chat-workspace-follow-offset: min(-12.5%, var(--chat-workspace-min-center-shift-negative));
+  animation: chat-workspace-conversation-follow var(--duration-normal) var(--ease-in-out) backwards;
+}
+
+@keyframes chat-workspace-panel-expand {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes chat-workspace-panel-collapse {
+  from { transform: translateX(0); }
+  to { transform: translateX(100%); }
+}
+
+@keyframes chat-workspace-conversation-follow {
+  from { transform: translateX(var(--chat-workspace-follow-offset)); }
+  to { transform: translateX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .global-sidebar::before,
+  .global-sidebar-copy {
+    transition: none;
+  }
+
+  [data-global-sidebar-workspace-region],
+  [data-global-sidebar-workspace-rail],
+  [data-global-sidebar-flyout],
+  [data-global-sidebar-motion] ~ [data-tab-workspace] > .custom-titlebar,
+  [data-global-sidebar-motion] ~ [data-tab-workspace] > [data-tab-content-workspace],
+  [data-chat-workspace-panel-motion],
+  [data-chat-workspace-motion] > [data-chat-conversation] {
+    animation: none;
+  }
+
+  .global-sidebar[data-global-sidebar-mode='rail'] [data-global-sidebar-workspace-region],
+  [data-chat-workspace-panel-motion='collapse'] {
+    visibility: hidden;
+  }
+}
+
+/* Viewport-locked app: prevent document-level scrolling entirely.
+   All scrolling is handled by inner containers (MessageList, panels, etc.). */
+html,
+body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  font-family: var(--font-body);
+  color: var(--ink);
+  background: var(--theme-body-background);
+  min-height: 100vh;
+  /* Cross-platform font rendering */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image: var(--theme-body-texture);
+  background-size: 3px 3px;
+  opacity: var(--theme-body-texture-opacity);
+  mix-blend-mode: var(--theme-body-texture-blend);
+  z-index: 0;
+}
+
+
+#root {
+  min-height: 100vh;
+  position: relative;
+  z-index: 1;
+}
+
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
+
+.glass-panel {
+  border: 1px solid var(--line);
+  background: var(--paper-elevated);
+  box-shadow: var(--shadow-xl);
+  border-radius: var(--radius-2xl);
+}
+
+.ink-muted {
+  color: var(--ink-muted);
+}
+
+/* Shared geometry for chat actions and workspace/preview toolbars.
+   Keep state colors on the owning button so selected/running states survive. */
+.compact-action {
+  display: inline-flex;
+  min-width: var(--space-8);
+  height: var(--space-8);
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: min(var(--radius-md), var(--space-2));
+}
+
+.compact-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--paper-elevated);
+  color: var(--ink);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease,
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease;
+  box-shadow: var(--action-shadow);
+}
+
+.action-button:hover {
+  border-color: var(--line-strong);
+  transform: translateY(-1px);
+}
+
+.action-button:active {
+  transform: translateY(1px) scale(0.98);
+  box-shadow: var(--action-shadow-active);
+}
+
+.action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Global button cursor and interaction feedback */
+button {
+  cursor: pointer;
+  /* Always include transform in transition for smooth active feedback */
+  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+/* Subtle press feedback — unified scale(0.98) for all interactive elements.
+   `:not(:has(...))` ensures only the innermost active element scales — when a
+   nested button is pressed inside a card/row, the outer ancestor (which also
+   matches :active per CSS rules) opts out, so only the actual button animates. */
+button:active:not(:disabled):not(:has(:is(button, [role="button"], [data-tree-row]):active)),
+[role="button"]:active:not(:has(:is(button, [role="button"], [data-tree-row]):active)) {
+  transform: scale(0.98);
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+/* Clickable row press feedback (file tree, list items, etc.) */
+[data-tree-row] {
+  transition-property: color, background-color, transform;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 100ms;
+}
+
+[data-tree-row]:active:not(:has(:is(button, [role="button"], [data-tree-row]):active)) {
+  transform: scale(0.98);
+  background-color: var(--paper-inset) !important;
+}
+
+/* Pulse animation for tab status dot (AI streaming on non-active tab) */
+@keyframes tab-dot-pulse {
+  0% {
+    opacity: 0.75;
+    transform: scale(1);
+  }
+  70% {
+    opacity: 0;
+    transform: scale(2.5);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.5);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @keyframes tab-dot-pulse {
+    0%, 100% { opacity: 0; transform: scale(1); }
+  }
+}
+
+/* Shimmer animation for thinking state */
+@keyframes shimmer {
+  0% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}
+
+.shimmer {
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+@keyframes shimmer-slide {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Indeterminate progress bar animation (browser loading indicator) */
+@keyframes indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+.animate-indeterminate {
+  animation: indeterminate 1.5s ease-in-out infinite;
+}
+
+/* PRD 0.2.17 — Agent Status Panel 点击 SubAgent 行后短暂高亮目标 TaskTool 卡片 */
+@keyframes agent-status-flash {
+  0%   { background-color: var(--accent-warm-subtle); }
+  100% { background-color: transparent; }
+}
+.agent-status-flash {
+  animation: agent-status-flash 1.5s ease-out;
+  border-radius: 0.5rem;
+}
+
+
+/* Terminal-like monospace typography for tool calls */
+.tool-input {
+  font-family: var(--font-code);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  letter-spacing: -0.01em;
+  font-feature-settings:
+    'liga' 1,
+    'calt' 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Clean code block styling */
+pre code {
+  font-family: var(--font-code);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  letter-spacing: -0.01em;
+}
+
+/* Tool container styling to mirror drawer cards */
+.tool-container {
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  background: var(--paper-elevated);
+  padding: 0.75rem 1rem;
+  box-shadow: var(--tool-shadow);
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.tool-container:hover {
+  border-color: var(--line-strong);
+  box-shadow: var(--tool-shadow-hover);
+}
+
+/* Create border with gaps for icons in expanded sections */
+.expanded-block-section {
+  position: relative;
+  background-image: linear-gradient(to bottom, var(--expanded-block-line) 0%, var(--expanded-block-line) 100%);
+  background-size: 1px 100%;
+  background-position: 0 0;
+  background-repeat: repeat-y;
+}
+
+/* Align tool call icons with border center and create gap */
+.expanded-block-section .flex.h-4.w-4.items-center.justify-center {
+  position: relative;
+  margin-left: -18.5px;
+  background-color: var(--paper-elevated);
+  z-index: 1;
+  padding: 3px 2px;
+  border-radius: 2px;
+}
+
+/* Align thinking badge icon with border center and create gap */
+.expanded-block-section .flex.items-center.gap-1\.5 {
+  position: relative;
+}
+
+.expanded-block-section .flex.items-center.gap-1\.5>svg.size-3:first-child {
+  position: relative;
+  margin-left: -16.5px;
+  z-index: 1;
+}
+
+/* Create background gap for thinking icon using pseudo-element on parent */
+.expanded-block-section .flex.items-center.gap-1\.5::before {
+  content: '';
+  position: absolute;
+  left: -18.5px;
+  width: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 18px;
+  background-color: var(--paper-elevated);
+  border-radius: 2px;
+  z-index: 0;
+}
+
+/* Remove extra indent and border from expanded tool calls and thinking blocks */
+.expanded-block-section .collapsible-tool-expanded {
+  margin-left: 0 !important;
+  border-left: none !important;
+  padding-left: 0 !important;
+}
+
+.expanded-block-section .thinking-expanded-content {
+  margin-left: 0 !important;
+  border-left: none !important;
+  padding-left: 0 !important;
+}
+
+/* ============================================
+   Launcher Page Styles
+   ============================================ */
+
+
+.launcher-brand {
+  min-width: 0; /* Allow shrinking */
+}
+
+/* Settings sidebar floating divider */
+.settings-sidebar {
+  position: relative;
+}
+
+.settings-sidebar::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 24px;
+  bottom: 24px;
+  width: 1px;
+  background: var(--line);
+}
+
+/* Settings sidebar active indicator — left accent bar */
+.settings-nav-active {
+  position: relative;
+}
+
+.settings-nav-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--accent) 80%, transparent);
+}
+
+@media (max-width: 640px) {
+  .settings-root {
+    flex-direction: column;
+  }
+
+  .settings-sidebar {
+    width: 100%;
+    flex-shrink: 0;
+    padding: 16px;
+  }
+
+  .settings-sidebar::after {
+    left: 16px;
+    right: 16px;
+    top: auto;
+    bottom: 0;
+    width: auto;
+    height: 1px;
+  }
+
+  .settings-nav {
+    display: flex;
+    gap: 8px;
+    margin: 0 -4px;
+    overflow-x: auto;
+    padding: 0 4px 4px;
+    scrollbar-width: none;
+  }
+
+  .settings-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .settings-nav > button {
+    width: auto;
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .settings-nav > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 0;
+  }
+
+  .settings-nav-active::before {
+    left: 8px;
+    right: 8px;
+    top: auto;
+    bottom: 0;
+    width: auto;
+    height: 2px;
+  }
+}
+
+/* ============================================
+   AI Content Styles
+   ============================================ */
+
+/* AI message content - optimized for reading */
+/* 产品级 prose 上下文（语义已宽于其名）：凡渲染 markdown 长文的容器都用它——
+   聊天 AI 正文（Message.tsx 三个 assistant 分支）+ Skill/Command/Agent 详情、
+   系统提示词、文件预览等 5 个预览面板。不要因名生义为预览面板另起新类
+   （v2.4 之前本类是死代码、typography plugin 的 .prose 在各面板各自为政，
+   字阶分叉正是那段历史的产物）。 */
+.ai-message-content {
+  font-size: var(--text-base);
+  line-height: 1.625;
+  letter-spacing: 0;
+}
+
+/* 具体段落、标题、列表与 compact 节奏的唯一 owner = Markdown.css 中的
+   `.markdown-content`。本类只给 host prose 容器提供默认正文 fallback，不能再
+   添加 descendant 间距规则，否则会重新形成跨文件双 owner。 */
+
+/* User message bubble */
+.user-message {
+  background: var(--paper-inset);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+}
+
+/* User bubbles still render Markdown, but document paragraph margins should not
+   add extra outer spacing inside the compact chat bubble. */
+.user-message-content p {
+  margin: 0;
+}
+
+.user-message-content p + p {
+  margin-top: var(--space-3);
+}
+
+/* Tool call card */
+.tool-call-card {
+  background: var(--paper-elevated);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  transition: border-color var(--duration-fast);
+}
+
+.tool-call-card:hover {
+  border-color: var(--line-strong);
+}
+
+/* Thinking block */
+.thinking-block {
+  border-left: 2px solid var(--line);
+  padding: var(--space-3) 0 var(--space-3) var(--space-4);
+  color: var(--ink-muted);
+  font-size: var(--text-sm);
+}
+
+/* Inline code */
+.inline-code {
+  background: var(--paper-inset);
+  color: var(--ink);
+  font-family: var(--font-code);
+  font-size: 0.9em;
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+}
+
+/* Permission prompt card */
+.permission-card {
+  background: var(--warning-bg);
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+}
+
+/* Button/Card/Badge CSS classes removed in Design Polish v2.0 — all styling is inline via Tailwind */
+
+/* ============================================
+   Text Selection Isolation
+   ============================================ */
+
+/*
+ * Problem: Double-clicking text in chat messages causes selection to bleed
+ * into surrounding UI elements (buttons, labels, etc.)
+ *
+ * Solution: Use CSS user-select to create selection boundaries:
+ * - Containers/buttons: user-select: none (prevents selection spread)
+ * - Text content: user-select: text (allows normal selection)
+ *
+ * CSS inheritance: Children inherit user-select from parents, so we only
+ * need to set boundaries at the right levels.
+ */
+
+/* Pre-formatted text blocks are always selectable */
+pre {
+  user-select: text;
+}
+
+/* Code elements (inline and block) are selectable */
+code {
+  user-select: text;
+}
+
+/* Markdown rendered content is selectable.
+   (.ai-message-content 取代了 typography plugin 的 .prose——v2.4 预览面板迁移后
+   .prose 不复存在，可选中规则随容器类同步，否则详情/预览面板文本无法复制) */
+.ai-message-content,
+.ai-message-content * {
+  user-select: text;
+}
+
+/* Code-block gutter (line numbers) — not part of the user-visible text.
+ * react-syntax-highlighter renders these as <span class="linenumber
+ * react-syntax-highlighter-line-number">. The component already sets
+ * userSelect: 'none' inline, which excludes them from the copy buffer.
+ * But WebKit still paints the selection background when a selection range
+ * passes over them (dragging from line 2 to line 5 highlights all four
+ * gutter cells visually, as seen in user reports). Force ::selection
+ * background transparent and disable pointer events so the gutter behaves
+ * like a passive ruler. Classes only ever appear inside CodeBlock — safe
+ * to target globally. */
+.linenumber,
+.react-syntax-highlighter-line-number {
+  -webkit-user-select: none;
+  user-select: none;
+  pointer-events: none;
+}
+.linenumber::selection,
+.react-syntax-highlighter-line-number::selection {
+  background: transparent;
+  color: var(--code-line-number);
+}
+
+
+/* ── Toolbar responsive: hide text labels when container is narrow ── */
+@container (max-width: 480px) {
+  .toolbar-menus .toolbar-label {
+    display: none;
+  }
+}
+
+/* ── Introduction overlay — immersive welcome content for empty sessions ── */
+/* Guide-layer palette: two steps back from conversation content (--ink).   */
+/* Everything here should feel lighter than real AI messages — backdrop,    */
+/* not content. Real messages use --ink; this layer stays at --ink-muted    */
+/* and below so the hierarchy is unambiguous once the user starts chatting. */
+/* De-emphasis is carried by the muted PALETTE, not by font-size: body uses */
+/* the same prose tier (16px) as real AI replies — a second prose base      */
+/* (formerly 14px) read as "字号大小不一" across the welcome→chat transition  */
+/* (PRD 0.2.34 P0-2). */
+.introduction-content {
+  font-size: var(--text-base);
+  line-height: 1.625;
+  color: var(--ink-muted);
+}
+
+/* H1 acts as a "nameplate", not a document title — lighter weight on purpose */
+.introduction-content h1 {
+  font-size: var(--text-2xl);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--ink-muted);
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+/* H2/H3 match H1 color — all guide-layer titles stay at --ink-muted.        */
+/* Sizes follow the Markdown heading ladder (18/16) so the guide layer and   */
+/* real replies share one scale; h3 sits at body size, weight carries it.    */
+.introduction-content h2 {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--ink-muted);
+  margin-top: 28px;
+  margin-bottom: 8px;
+}
+
+.introduction-content h3 {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--ink-muted);
+  margin-top: 16px;
+  margin-bottom: 6px;
+}
+
+/* List items explicitly inherit body color to stay consistent */
+.introduction-content ul,
+.introduction-content ol,
+.introduction-content li {
+  color: var(--ink-muted);
+}
+
+/* Bold text capped at --ink-muted so it doesn't jump back to dark */
+.introduction-content strong {
+  font-weight: 600;
+  color: var(--ink-muted);
+}
+
+/* HR nearly invisible — structural hint, not visual break */
+.introduction-content hr {
+  border: none;
+  border-top: 1px solid var(--line-subtle);
+  margin: 24px 0;
+}
+
+/* Blockquotes styled as warm-accent prompt examples */
+.introduction-content blockquote {
+  border-left: 3px solid var(--accent-warm-subtle);
+  background: var(--accent-warm-subtle);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: 10px 14px;
+  color: var(--ink-muted);
+  font-style: normal;
+}
+
+/*
+ * The CSS Highlight API styles for the in-page text finder (Cmd/Ctrl+F)
+ * live in useChatSearch.ts and are injected at runtime via a <style> tag.
+ * LightningCSS (Tailwind v4's CSS optimizer, ≤1.30.2 as of 2026-04)
+ * does not yet recognize `::highlight(name)` as a valid pseudo-element
+ * and emits build-time warnings when it sees the literal in a static
+ * stylesheet. Runtime injection keeps the build clean.
+ */
+
+/*
+ * Monaco editor — horizontal breathing room.
+ *
+ * Monaco's `padding` config only supports top/bottom. We pad the wrapper element
+ * instead; Monaco's `automaticLayout: true` watches the wrapper's size via a
+ * ResizeObserver and re-lays out within the reduced content box. Result: the
+ * editor surface (including its overlay scrollbar) sits inset from the modal
+ * edge, leaving a clean gutter on the right.
+ *
+ * Scoped to `.monaco-editor-host` so other Monaco mounts (if any) are unaffected.
+ * Note: this can't fully prevent text from sliding under the overlay vertical
+ * scrollbar within Monaco's own viewport — that's a Monaco limitation. The padding
+ * here addresses the dominant complaint (text touching the modal/panel boundary).
+ */
+.monaco-editor-host {
+  padding-right: 16px;
+}
+
+.monaco-editor-host .myagents-monaco-search-focus-line {
+  background-color: var(--accent-warm-subtle) !important;
+}
+
+/* Monaco's find widget creates its own hover popovers for the Aa/ab/.* controls.
+ * Those popovers can sit directly over the button and intercept clicks. The editor
+ * wrapper renders a scoped MyAgents tooltip instead, so the built-in one is hidden
+ * only for Monaco instances mounted through this host.
+ */
+.monaco-editor-host .monaco-hover {
+  display: none !important;
+}
+
+.myagents-monaco-find-tooltip {
+  pointer-events: none;
+  position: fixed;
+  z-index: 330;
+  max-width: min(260px, calc(100vw - 16px));
+  transform: translateX(-50%);
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--button-dark-bg) 72%, var(--line-strong));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--button-dark-bg) 94%, transparent);
+  color: var(--button-dark-text);
+  box-shadow: var(--shadow-lg);
+  font-size: var(--text-xs);
+  line-height: 1.35;
+  white-space: normal;
+}

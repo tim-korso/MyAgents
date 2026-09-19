@@ -1,0 +1,1219 @@
+//! Narrow application owner for Task mutations that cross TaskStore,
+//! scheduler, and RecordStore boundaries.
+//!
+//! Transports stamp caller identity and map DTOs/errors. Compatibility and
+//! system domains call these use cases directly instead of importing an HTTP
+//! handler module.
+
+use serde::Serialize;
+use tauri::{AppHandle, Manager};
+
+use crate::record::RecordStore;
+use crate::task::{
+    StatusTransition, Task, TaskComment, TaskCommentAdmissionState, TaskCommentAuthor,
+    TaskCreateAttachedInput, TaskCreateDirectInput, TaskStatus, TaskStore, TaskUpdateInput,
+    TaskUpdateStatusInput,
+};
+use crate::task_scheduler::TaskControlGuard;
+use crate::ulog_warn;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskApplicationErrorCode {
+    StoreUnavailable,
+    NotFound,
+    Busy,
+    InvalidState,
+    ExecutionUnresolved,
+    ScheduleInvalid,
+    MutationFailed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskApplicationError {
+    code: TaskApplicationErrorCode,
+    message: String,
+}
+
+impl TaskApplicationError {
+    pub fn code(&self) -> TaskApplicationErrorCode {
+        self.code
+    }
+
+    fn store_unavailable() -> Self {
+        Self {
+            code: TaskApplicationErrorCode::StoreUnavailable,
+            message: "task store not initialized".to_string(),
+        }
+    }
+
+    fn not_found(task_id: &str) -> Self {
+        Self {
+            code: TaskApplicationErrorCode::NotFound,
+            message: format!("task not found: {task_id}"),
+        }
+    }
+
+    fn busy(task_id: &str) -> Self {
+        Self {
+            code: TaskApplicationErrorCode::Busy,
+            message: format!(
+                "task {task_id} is stopping or changing scheduler state; retry after it settles"
+            ),
+        }
+    }
+
+    fn invalid_state(message: impl Into<String>) -> Self {
+        Self {
+            code: TaskApplicationErrorCode::InvalidState,
+            message: message.into(),
+        }
+    }
+
+    fn unresolved(task_id: &str, state: &str, rerun: bool) -> Self {
+        let action = if rerun {
+            "retry stop before rerunning"
+        } else {
+            "stop it before rerunning"
+        };
+        Self {
+            code: TaskApplicationErrorCode::ExecutionUnresolved,
+            message: format!("task {task_id} still has an unresolved {state} execution; {action}"),
+        }
+    }
+
+    fn schedule(message: String) -> Self {
+        Self {
+            code: TaskApplicationErrorCode::ScheduleInvalid,
+            message,
+        }
+    }
+
+    fn mutation(message: String) -> Self {
+        Self {
+            code: TaskApplicationErrorCode::MutationFailed,
+            message,
+        }
+    }
+}
+
+impl std::fmt::Display for TaskApplicationError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for TaskApplicationError {}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskRunResult {
+    pub task: Task,
+    /// One-based ordinal owned by the accepted run/rerun mutation. This is
+    /// deliberately independent from Session history cardinality. A repeated
+    /// idempotent run has no newly accepted attempt.
+    pub attempt_ordinal: Option<u32>,
+    /// Whether this call changed Task lifecycle state and accepted a new run.
+    pub changed: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct TaskStatusMutationResult {
+    pub task: Task,
+    pub transition: Option<StatusTransition>,
+}
+
+pub struct TaskApplication<'a> {
+    tasks: &'a TaskStore,
+    records: Option<&'a RecordStore>,
+}
+
+impl<'a> TaskApplication<'a> {
+    pub fn new(tasks: &'a TaskStore, records: Option<&'a RecordStore>) -> Self {
+        Self { tasks, records }
+    }
+
+    pub fn from_globals() -> Result<TaskApplication<'static>, TaskApplicationError> {
+        let tasks = crate::task::get_task_store()
+            .map(std::sync::Arc::as_ref)
+            .ok_or_else(TaskApplicationError::store_unavailable)?;
+        let records = crate::record::get_record_store().map(std::sync::Arc::as_ref);
+        Ok(TaskApplication::new(tasks, records))
+    }
+
+    async fn ordinary_task(&self, task_id: &str) -> Result<Task, TaskApplicationError> {
+        let task = self
+            .tasks
+            .get(task_id)
+            .await
+            .ok_or_else(|| TaskApplicationError::not_found(task_id))?;
+        if crate::task::is_managed_task(&task) {
+            return Err(TaskApplicationError::mutation(
+                crate::task::MANAGED_TASK_ERROR.to_string(),
+            ));
+        }
+        Ok(task)
+    }
+
+    async fn any_task(&self, task_id: &str) -> Result<Task, TaskApplicationError> {
+        self.tasks
+            .get(task_id)
+            .await
+            .filter(|task| !task.deleted)
+            .ok_or_else(|| TaskApplicationError::not_found(task_id))
+    }
+
+    async fn link_source_record(&self, task: &Task) {
+        let (Some(record_id), Some(records)) = (task.source_record_id.as_deref(), self.records)
+        else {
+            return;
+        };
+        if let Err(error) = records.link_task(record_id, &task.id).await {
+            // Preserve the established partial-success contract: Task is the
+            // durable primary fact and a Thought projection failure is visible
+            // in logs without rolling the Task back.
+            ulog_warn!(
+                "[task-application] created {} but Record link failed: {}",
+                task.id,
+                error
+            );
+        }
+    }
+
+    async fn unlink_source_record(&self, task: &Task) {
+        let (Some(record_id), Some(records)) = (task.source_record_id.as_deref(), self.records)
+        else {
+            return;
+        };
+        if let Err(error) = records.unlink_task(record_id, &task.id).await {
+            ulog_warn!(
+                "[task-application] deleted {} but Record unlink failed: {}",
+                task.id,
+                error
+            );
+        }
+    }
+
+    pub async fn create_direct(
+        &self,
+        input: TaskCreateDirectInput,
+    ) -> Result<Task, TaskApplicationError> {
+        self.create_direct_with_origin(
+            input,
+            crate::task::TransitionActor::User,
+            Some(crate::task::TransitionSource::Ui),
+        )
+        .await
+    }
+
+    pub async fn create_direct_with_origin(
+        &self,
+        input: TaskCreateDirectInput,
+        actor: crate::task::TransitionActor,
+        source: Option<crate::task::TransitionSource>,
+    ) -> Result<Task, TaskApplicationError> {
+        let task = self
+            .tasks
+            .create_direct_with_origin(input, actor, source)
+            .await
+            .map_err(TaskApplicationError::mutation)?;
+        self.link_source_record(&task).await;
+        Ok(task)
+    }
+
+    /// Create-and-start is one application operation. A committed Task remains
+    /// inspectable when startup fails; callers must not compensate with delete.
+    pub async fn create_and_start_scheduled(
+        &self,
+        input: TaskCreateDirectInput,
+    ) -> Result<(Task, Option<String>), TaskApplicationError> {
+        let task = self.create_direct(input).await?;
+        match self.start_scheduled_task(&task.id).await {
+            Ok(started) => Ok((started, None)),
+            Err(error) => Ok((self.any_task(&task.id).await?, Some(error.to_string()))),
+        }
+    }
+
+    pub async fn create_system_managed_direct(
+        &self,
+        input: TaskCreateDirectInput,
+    ) -> Result<Task, TaskApplicationError> {
+        self.tasks
+            .create_system_managed_direct(input)
+            .await
+            .map_err(TaskApplicationError::mutation)
+    }
+
+    pub async fn create_attached(
+        &self,
+        input: TaskCreateAttachedInput,
+    ) -> Result<Task, TaskApplicationError> {
+        self.tasks
+            .create_attached(input)
+            .await
+            .map_err(TaskApplicationError::mutation)
+    }
+
+    pub async fn update_ordinary(
+        &self,
+        input: TaskUpdateInput,
+    ) -> Result<Task, TaskApplicationError> {
+        self.ordinary_task(&input.id).await?;
+        self.tasks
+            .update(input)
+            .await
+            .map_err(TaskApplicationError::mutation)
+    }
+
+    pub async fn append_session_ordinary(
+        &self,
+        task_id: &str,
+        session_id: &str,
+    ) -> Result<Task, TaskApplicationError> {
+        self.ordinary_task(task_id).await?;
+        self.tasks
+            .append_session(task_id, session_id)
+            .await
+            .map_err(TaskApplicationError::mutation)
+    }
+
+    async fn deliver_user_comment(
+        &self,
+        app_handle: &AppHandle,
+        manager: &crate::sidecar::ManagedSidecarManager,
+        comment: TaskComment,
+    ) -> Result<TaskComment, TaskApplicationError> {
+        let Some(target_session_id) = comment
+            .admission
+            .as_ref()
+            .and_then(|admission| admission.target_session_id.clone())
+        else {
+            return Ok(comment);
+        };
+        let task = self.ordinary_task(&comment.task_id).await?;
+        let task_md_path = crate::task::build_task_docs(&task.id)
+            .map_err(TaskApplicationError::mutation)?
+            .task_md;
+        let reply_context = if let Some(parent_id) = comment.reply_to_comment_id.as_deref() {
+            let page = self
+                .tasks
+                .comment_context(&task.id, parent_id, 1)
+                .await
+                .map_err(TaskApplicationError::mutation)?;
+            page.items
+                .into_iter()
+                .find(|candidate| candidate.id == parent_id)
+                .map(|parent| {
+                    let mut points = parent.body.trim().chars();
+                    let quote: String = points.by_ref().take(30).collect();
+                    let quote = if points.next().is_some() {
+                        format!("{quote}…")
+                    } else {
+                        quote
+                    };
+                    let author = match parent.author {
+                        TaskCommentAuthor::User { label } => {
+                            label.unwrap_or_else(|| "User".to_string())
+                        }
+                        TaskCommentAuthor::Agent { label, .. } => {
+                            label.unwrap_or_else(|| "Agent".to_string())
+                        }
+                    };
+                    serde_json::json!({
+                        "commentId": parent.id,
+                        "author": author,
+                        "createdAt": chrono::DateTime::from_timestamp_millis(parent.created_at)
+                            .map(|value| value.to_rfc3339())
+                            .unwrap_or_else(|| parent.created_at.to_string()),
+                        "quote": quote,
+                    })
+                })
+        } else {
+            None
+        };
+        let mut event = serde_json::json!({
+            "version": 1,
+            "type": "task.comment",
+            "eventId": comment.id,
+            "createdAt": chrono::DateTime::from_timestamp_millis(comment.created_at)
+                .map(|value| value.to_rfc3339())
+                .unwrap_or_else(|| comment.created_at.to_string()),
+            "sourceSessionId": format!("task:{}", task.id),
+            "sourceLabel": task.name,
+            "targetSessionId": target_session_id,
+            "taskId": task.id,
+            "taskName": task.name,
+            "taskMdPath": task_md_path,
+            "commentId": comment.id,
+        });
+        if let Some(reply_context) = reply_context {
+            event["replyContext"] = reply_context;
+        }
+        let message = crate::inbox::PendingInboxMessage {
+            message_id: comment.id.clone(),
+            from_session_id: format!("task:{}", comment.task_id),
+            from_label: "Task comment".to_string(),
+            to_session_id: target_session_id,
+            text: comment.body.clone(),
+            reply_back: false,
+            timestamp_ms: comment.created_at,
+            kind: crate::inbox::InboxMessageKind::Event,
+            in_reply_to: comment.reply_to_comment_id.clone(),
+            session_event: Some(event),
+        };
+        let outcome = crate::inbox::deliver::deliver_existing_session_with_resume(
+            app_handle,
+            manager,
+            message,
+            Some(std::path::PathBuf::from(&task.workspace_path)),
+        )
+        .await;
+        let (state, error) = match outcome {
+            crate::inbox::deliver::DeliverOutcome::Delivered { .. } => {
+                (TaskCommentAdmissionState::Accepted, None)
+            }
+            crate::inbox::deliver::DeliverOutcome::SessionNotFound => (
+                TaskCommentAdmissionState::Failed,
+                Some("Target Session no longer exists".to_string()),
+            ),
+            crate::inbox::deliver::DeliverOutcome::DeliveryFailed { reason }
+            | crate::inbox::deliver::DeliverOutcome::Rejected { reason } => {
+                (TaskCommentAdmissionState::Failed, Some(reason))
+            }
+        };
+        match self
+            .tasks
+            .update_comment_admission(&comment.task_id, &comment.id, state, error)
+            .await
+        {
+            Ok(updated) => Ok(updated),
+            Err(receipt_error) => {
+                // The inbox admission may already have happened. Losing only
+                // the receipt must not turn a persisted comment into a failed
+                // create response (which would invite duplicate retries).
+                ulog_warn!(
+                    "[TaskApplication] comment admission receipt was not persisted task={} comment={} error={}",
+                    comment.task_id,
+                    comment.id,
+                    receipt_error
+                );
+                let mut projection = comment;
+                if let Some(admission) = projection.admission.as_mut() {
+                    admission.state = TaskCommentAdmissionState::Unknown;
+                    admission.accepted_at = None;
+                    admission.error = Some(
+                        "Delivery outcome is unknown because its local receipt could not be saved"
+                            .to_string(),
+                    );
+                }
+                Ok(projection)
+            }
+        }
+    }
+
+    async fn project_persisted_delivery_failure(
+        &self,
+        mut comment: TaskComment,
+        error: &TaskApplicationError,
+    ) -> TaskComment {
+        let message = error.to_string();
+        match self
+            .tasks
+            .update_comment_admission(
+                &comment.task_id,
+                &comment.id,
+                TaskCommentAdmissionState::Failed,
+                Some(message.clone()),
+            )
+            .await
+        {
+            Ok(updated) => updated,
+            Err(receipt_error) => {
+                ulog_warn!(
+                    "[TaskApplication] persisted comment could not record delivery failure task={} comment={} delivery_error={} receipt_error={}",
+                    comment.task_id,
+                    comment.id,
+                    message,
+                    receipt_error
+                );
+                if let Some(admission) = comment.admission.as_mut() {
+                    admission.state = TaskCommentAdmissionState::Unknown;
+                    admission.accepted_at = None;
+                    admission.error = Some(message.chars().take(500).collect());
+                }
+                comment
+            }
+        }
+    }
+
+    pub async fn create_user_comment(
+        &self,
+        app_handle: &AppHandle,
+        manager: &crate::sidecar::ManagedSidecarManager,
+        task_id: &str,
+        body: &str,
+        reply_to_comment_id: Option<&str>,
+    ) -> Result<TaskComment, TaskApplicationError> {
+        // Reuse the Task mutation coordinator as the admission fence. The
+        // scheduler holds the same guard while it publishes a first Session
+        // and flushes older pending comments, so a newly-created comment
+        // cannot overtake that chronological backlog at the Session Inbox.
+        let _control = crate::task_scheduler::acquire_task_control(task_id).await;
+        self.ordinary_task(task_id).await?;
+        let comment = self
+            .tasks
+            .create_user_comment_with_session_probe(
+                task_id,
+                body,
+                reply_to_comment_id,
+                |session_id| {
+                    crate::sidecar::session_lifecycle::session_exists_for_continuation(
+                        manager, session_id,
+                    )
+                },
+            )
+            .await
+            .map_err(TaskApplicationError::mutation)?;
+        match self
+            .deliver_user_comment(app_handle, manager, comment.clone())
+            .await
+        {
+            Ok(updated) => Ok(updated),
+            Err(error) => Ok(self
+                .project_persisted_delivery_failure(comment, &error)
+                .await),
+        }
+    }
+
+    pub async fn retry_user_comment(
+        &self,
+        app_handle: &AppHandle,
+        manager: &crate::sidecar::ManagedSidecarManager,
+        task_id: &str,
+        comment_id: &str,
+    ) -> Result<TaskComment, TaskApplicationError> {
+        let _control = crate::task_scheduler::acquire_task_control(task_id).await;
+        self.ordinary_task(task_id).await?;
+        let comment = self
+            .tasks
+            .retry_comment(task_id, comment_id)
+            .await
+            .map_err(TaskApplicationError::mutation)?;
+        match self
+            .deliver_user_comment(app_handle, manager, comment.clone())
+            .await
+        {
+            Ok(updated) => Ok(updated),
+            Err(error) => Ok(self
+                .project_persisted_delivery_failure(comment, &error)
+                .await),
+        }
+    }
+
+    pub async fn append_agent_comment(
+        &self,
+        task_id: &str,
+        session_id: &str,
+        body: &str,
+        reply_to_comment_id: Option<&str>,
+    ) -> Result<TaskComment, TaskApplicationError> {
+        self.ordinary_task(task_id).await?;
+        let comment = self
+            .tasks
+            .append_agent_comment(task_id, session_id, body, reply_to_comment_id)
+            .await
+            .map_err(TaskApplicationError::mutation)?;
+        if let Some(app) = crate::logger::get_app_handle() {
+            if let Some(center) =
+                app.try_state::<crate::space_cloud::notifications::ManagedNotificationCenter>()
+            {
+                crate::space_cloud::notifications::agent_comment_appended(
+                    app,
+                    center.inner(),
+                    &format!("task-comment:{}", comment.id),
+                );
+            }
+        }
+        Ok(comment)
+    }
+
+    pub async fn deliver_claimed_comments(
+        &self,
+        app_handle: &AppHandle,
+        manager: &crate::sidecar::ManagedSidecarManager,
+        task_id: &str,
+        session_id: &str,
+        comments: Vec<TaskComment>,
+    ) -> Result<(), TaskApplicationError> {
+        for comment in comments {
+            if let Err(error) = self
+                .deliver_user_comment(app_handle, manager, comment)
+                .await
+            {
+                crate::ulog_warn!(
+                    "[task-comment] pending flush failed task={} session={}: {}",
+                    task_id,
+                    session_id,
+                    error
+                );
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn update_status_ordinary(
+        &self,
+        input: TaskUpdateStatusInput,
+    ) -> Result<TaskStatusMutationResult, TaskApplicationError> {
+        let control = crate::task_scheduler::acquire_task_control(&input.id).await;
+        let current = self.ordinary_task(&input.id).await?;
+        if crate::task::is_terminal_execution_stop_request(current.status, input.status) {
+            crate::task_scheduler::get_task_scheduler()
+                .stop_with_control_held(&current.id, &control)
+                .await
+                .map_err(TaskApplicationError::mutation)?;
+            if current.effective_trigger().is_command() {
+                self.tasks
+                    .cancel_pending_activation(&current.id)
+                    .await
+                    .map_err(TaskApplicationError::mutation)?;
+            }
+            return Ok(TaskStatusMutationResult {
+                task: current,
+                transition: None,
+            });
+        }
+        let (task, transition) = self
+            .tasks
+            .update_status_with_task_control_held(input, &control)
+            .await
+            .map_err(TaskApplicationError::mutation)?;
+        Ok(TaskStatusMutationResult {
+            task,
+            transition: Some(transition),
+        })
+    }
+
+    pub async fn archive_ordinary(
+        &self,
+        task_id: &str,
+        message: Option<String>,
+    ) -> Result<Task, TaskApplicationError> {
+        self.archive_ordinary_with_origin(
+            task_id,
+            message,
+            crate::task::TransitionActor::User,
+            Some(crate::task::TransitionSource::Ui),
+        )
+        .await
+    }
+
+    pub async fn archive_ordinary_with_origin(
+        &self,
+        task_id: &str,
+        message: Option<String>,
+        actor: crate::task::TransitionActor,
+        source: Option<crate::task::TransitionSource>,
+    ) -> Result<Task, TaskApplicationError> {
+        self.ordinary_task(task_id).await?;
+        self.tasks
+            .archive_with_origin(task_id, message, actor, source)
+            .await
+            .map_err(TaskApplicationError::mutation)
+    }
+
+    pub async fn delete_ordinary(&self, task_id: &str) -> Result<(), TaskApplicationError> {
+        self.delete_ordinary_with_origin(
+            task_id,
+            crate::task::TransitionActor::User,
+            Some(crate::task::TransitionSource::Ui),
+        )
+        .await
+    }
+
+    pub async fn delete_ordinary_with_origin(
+        &self,
+        task_id: &str,
+        actor: crate::task::TransitionActor,
+        source: Option<crate::task::TransitionSource>,
+    ) -> Result<(), TaskApplicationError> {
+        let task = self.ordinary_task(task_id).await?;
+        self.delete_task(task, actor, source).await
+    }
+
+    pub async fn delete_internal(&self, task_id: &str) -> Result<(), TaskApplicationError> {
+        let task = self.any_task(task_id).await?;
+        self.delete_task(
+            task,
+            crate::task::TransitionActor::User,
+            Some(crate::task::TransitionSource::Ui),
+        )
+        .await
+    }
+
+    async fn delete_task(
+        &self,
+        task: Task,
+        actor: crate::task::TransitionActor,
+        source: Option<crate::task::TransitionSource>,
+    ) -> Result<(), TaskApplicationError> {
+        self.tasks
+            .delete_with_origin(&task.id, actor, source)
+            .await
+            .map_err(TaskApplicationError::mutation)?;
+        self.unlink_source_record(&task).await;
+        Ok(())
+    }
+
+    pub async fn run_ordinary(&self, task_id: &str) -> Result<TaskRunResult, TaskApplicationError> {
+        self.ordinary_task(task_id).await?;
+        self.run(task_id).await
+    }
+
+    pub async fn run_ordinary_with_origin(
+        &self,
+        task_id: &str,
+        actor: crate::task::TransitionActor,
+        source: Option<crate::task::TransitionSource>,
+    ) -> Result<TaskRunResult, TaskApplicationError> {
+        self.ordinary_task(task_id).await?;
+        // Serialize duplicate callers on the Task lifecycle authority. The
+        // follower observes Running after the leader commits and returns the
+        // same semantic success instead of racing into a busy/invalid-state
+        // error or dispatching twice.
+        let control = crate::task_scheduler::acquire_task_control(task_id).await;
+        self.run_with_control_and_origin(task_id, &control, actor, source)
+            .await
+    }
+
+    pub async fn run(&self, task_id: &str) -> Result<TaskRunResult, TaskApplicationError> {
+        let control = crate::task_scheduler::acquire_task_control(task_id).await;
+        self.run_with_control(task_id, &control).await
+    }
+
+    pub(crate) async fn run_with_control(
+        &self,
+        task_id: &str,
+        control: &TaskControlGuard,
+    ) -> Result<TaskRunResult, TaskApplicationError> {
+        self.run_with_control_and_origin(
+            task_id,
+            control,
+            crate::task::TransitionActor::System,
+            Some(crate::task::TransitionSource::Scheduler),
+        )
+        .await
+    }
+
+    pub(crate) async fn run_with_control_and_origin(
+        &self,
+        task_id: &str,
+        control: &TaskControlGuard,
+        actor: crate::task::TransitionActor,
+        source: Option<crate::task::TransitionSource>,
+    ) -> Result<TaskRunResult, TaskApplicationError> {
+        let task = self.any_task(task_id).await?;
+        if task.status == TaskStatus::Running {
+            return Ok(TaskRunResult {
+                task,
+                attempt_ordinal: None,
+                changed: false,
+            });
+        }
+        if task.status != TaskStatus::Todo {
+            return Err(TaskApplicationError::invalid_state(format!(
+                "task is in state '{}'; inspect it before choosing 'myagents task start {}' or 'myagents task rerun {}'",
+                task.status.as_str(), task.id, task.id
+            )));
+        }
+        if let Some(execution) = crate::task_scheduler::get_task_scheduler()
+            .execution_projection(task_id)
+            .await
+        {
+            return Err(TaskApplicationError::unresolved(
+                task_id,
+                execution.state.as_str(),
+                false,
+            ));
+        }
+        crate::task_scheduler::validate_task_schedule(&task)
+            .map_err(TaskApplicationError::schedule)?;
+        let (running, _) = self
+            .tasks
+            .update_status_with_task_control_held(
+                TaskUpdateStatusInput {
+                    id: task.id.clone(),
+                    status: TaskStatus::Running,
+                    message: Some("dispatched".to_string()),
+                    actor,
+                    source,
+                },
+                control,
+            )
+            .await
+            .map_err(TaskApplicationError::mutation)?;
+        if let Err(error) = crate::task_scheduler::get_task_scheduler()
+            .start_with_control_held(&running.id, control)
+            .await
+        {
+            let rollback = self
+                .tasks
+                .update_status_with_task_control_held(
+                    TaskUpdateStatusInput {
+                        id: running.id.clone(),
+                        status: TaskStatus::Blocked,
+                        message: Some(format!("scheduler start failed: {error}")),
+                        actor: crate::task::TransitionActor::System,
+                        source: Some(crate::task::TransitionSource::Scheduler),
+                    },
+                    control,
+                )
+                .await;
+            if let Err(rollback_error) = rollback {
+                ulog_warn!(
+                    "[task-application] scheduler start failed and blocked transition failed task={}: {}",
+                    running.id,
+                    rollback_error
+                );
+            }
+            return Err(TaskApplicationError::mutation(error));
+        }
+        Ok(TaskRunResult {
+            attempt_ordinal: Some(running.execution_count.saturating_add(1)),
+            task: running,
+            changed: true,
+        })
+    }
+
+    pub async fn rerun_ordinary(
+        &self,
+        task_id: &str,
+    ) -> Result<TaskRunResult, TaskApplicationError> {
+        self.rerun_ordinary_with_origin(
+            task_id,
+            crate::task::TransitionActor::System,
+            Some(crate::task::TransitionSource::Rerun),
+        )
+        .await
+    }
+
+    pub async fn rerun_ordinary_with_origin(
+        &self,
+        task_id: &str,
+        actor: crate::task::TransitionActor,
+        source: Option<crate::task::TransitionSource>,
+    ) -> Result<TaskRunResult, TaskApplicationError> {
+        let control = crate::task_scheduler::try_acquire_task_control(task_id)
+            .await
+            .ok_or_else(|| TaskApplicationError::busy(task_id))?;
+        let task = self.ordinary_task(task_id).await?;
+        if !matches!(
+            task.status,
+            TaskStatus::Blocked | TaskStatus::Stopped | TaskStatus::Done | TaskStatus::Archived
+        ) {
+            return Err(TaskApplicationError::invalid_state(format!(
+                "rerun only valid from blocked/stopped/done/archived; current = '{}'",
+                task.status.as_str()
+            )));
+        }
+        if let Some(execution) = crate::task_scheduler::get_task_scheduler()
+            .execution_projection(task_id)
+            .await
+        {
+            return Err(TaskApplicationError::unresolved(
+                task_id,
+                execution.state.as_str(),
+                true,
+            ));
+        }
+        self.tasks
+            .update_status_with_task_control_held(
+                TaskUpdateStatusInput {
+                    id: task.id.clone(),
+                    status: TaskStatus::Todo,
+                    message: Some("rerun requested".to_string()),
+                    actor,
+                    source,
+                },
+                &control,
+            )
+            .await
+            .map_err(|error| TaskApplicationError::mutation(format!("reset failed: {error}")))?;
+        self.run_with_control_and_origin(task_id, &control, actor, source)
+            .await
+    }
+
+    /// Compatibility start accepts a newly-created Todo or resumes Stopped,
+    /// while remaining idempotent for Running. Terminal retries use rerun so
+    /// `start` cannot silently reactivate completed or archived work.
+    pub async fn start_scheduled_task(&self, task_id: &str) -> Result<Task, TaskApplicationError> {
+        self.start_scheduled_task_with_origin(
+            task_id,
+            crate::task::TransitionActor::System,
+            Some(crate::task::TransitionSource::Scheduler),
+        )
+        .await
+    }
+
+    pub async fn start_scheduled_task_with_origin(
+        &self,
+        task_id: &str,
+        actor: crate::task::TransitionActor,
+        source: Option<crate::task::TransitionSource>,
+    ) -> Result<Task, TaskApplicationError> {
+        let control = crate::task_scheduler::acquire_task_control(task_id).await;
+        let mut task = self.any_task(task_id).await?;
+        if task.status == TaskStatus::Running {
+            if let Err(error) = crate::task_scheduler::get_task_scheduler()
+                .start_with_control_held(task_id, &control)
+                .await
+            {
+                let _ = self
+                    .tasks
+                    .update_status_with_task_control_held(
+                        TaskUpdateStatusInput {
+                            id: task_id.to_string(),
+                            status: TaskStatus::Blocked,
+                            message: Some(format!("scheduler start failed: {error}")),
+                            actor: crate::task::TransitionActor::System,
+                            source: Some(crate::task::TransitionSource::Scheduler),
+                        },
+                        &control,
+                    )
+                    .await;
+                return Err(TaskApplicationError::mutation(error));
+            }
+            return Ok(task);
+        }
+        if !matches!(task.status, TaskStatus::Todo | TaskStatus::Stopped) {
+            return Err(TaskApplicationError::invalid_state(format!(
+                "task is in state '{}'; use 'myagents task rerun {}' to re-dispatch it",
+                task.status.as_str(),
+                task.id
+            )));
+        }
+        if task.status == TaskStatus::Stopped {
+            task = self
+                .tasks
+                .update_status_with_task_control_held(
+                    TaskUpdateStatusInput {
+                        id: task_id.to_string(),
+                        status: TaskStatus::Todo,
+                        message: Some("scheduled task restarted".to_string()),
+                        actor,
+                        source,
+                    },
+                    &control,
+                )
+                .await
+                .map_err(TaskApplicationError::mutation)?
+                .0;
+        }
+        self.run_with_control_and_origin(&task.id, &control, actor, source)
+            .await
+            .map(|result| result.task)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::record::{RecordStore, TextRecordCreateInput};
+    use crate::task::{
+        TaskDispatchOrigin, TaskExecutionMode, TaskExecutor, TaskRunMode, TaskStatus,
+        TransitionActor, TransitionSource,
+    };
+    use tempfile::tempdir;
+
+    fn direct_input(workspace: &std::path::Path) -> TaskCreateDirectInput {
+        TaskCreateDirectInput {
+            name: "Application task".to_string(),
+            executor: TaskExecutor::Agent,
+            description: None,
+            workspace_id: "workspace-1".to_string(),
+            workspace_path: workspace.to_string_lossy().into_owned(),
+            task_md_content: "Do the work".to_string(),
+            execution_mode: TaskExecutionMode::Once,
+            run_mode: Some(TaskRunMode::NewSession),
+            end_conditions: None,
+            interval_minutes: None,
+            cron_expression: None,
+            cron_timezone: None,
+            start_at: None,
+            recurring_window: None,
+            dispatch_at: None,
+            trigger: None,
+            model: None,
+            provider_id: None,
+            permission_mode: None,
+            preselected_session_id: None,
+            runtime: None,
+            runtime_config: None,
+            mcp_enabled_servers: None,
+            managed_kind: None,
+            source_record_id: None,
+            tags: Vec::new(),
+            notification: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn create_and_delete_share_record_projection_policy() {
+        let temp = tempdir().unwrap();
+        let tasks = TaskStore::new(temp.path().join("task-store"));
+        let records = RecordStore::new(temp.path().join("record-store"), None);
+        let record = records
+            .create_text(TextRecordCreateInput {
+                content: "Source Record".to_string(),
+                images: Vec::new(),
+            })
+            .await
+            .unwrap();
+        let application = TaskApplication::new(&tasks, Some(&records));
+        let mut input = direct_input(temp.path());
+        input.source_record_id = Some(record.id.clone());
+
+        let created = application.create_direct(input).await.unwrap();
+        assert!(records
+            .get(&record.id)
+            .await
+            .unwrap()
+            .converted_task_ids
+            .contains(&created.id));
+
+        application.delete_ordinary(&created.id).await.unwrap();
+        assert!(!records
+            .get(&record.id)
+            .await
+            .unwrap()
+            .converted_task_ids
+            .contains(&created.id));
+    }
+
+    #[tokio::test]
+    async fn cli_origin_is_preserved_and_agent_archive_is_rejected() {
+        let temp = tempdir().unwrap();
+        let tasks = TaskStore::new(temp.path().join("task-store"));
+        let application = TaskApplication::new(&tasks, None);
+        let created = application
+            .create_direct_with_origin(
+                direct_input(temp.path()),
+                TransitionActor::Agent,
+                Some(TransitionSource::Cli),
+            )
+            .await
+            .unwrap();
+        let created_transition = created.status_history.last().unwrap();
+        assert_eq!(created_transition.actor, TransitionActor::Agent);
+        assert_eq!(created_transition.source, Some(TransitionSource::Cli));
+
+        for status in [TaskStatus::Running, TaskStatus::Verifying, TaskStatus::Done] {
+            tasks
+                .update_status(crate::task::TaskUpdateStatusInput {
+                    id: created.id.clone(),
+                    status,
+                    message: None,
+                    actor: TransitionActor::System,
+                    source: Some(TransitionSource::Scheduler),
+                })
+                .await
+                .unwrap();
+        }
+        let error = application
+            .archive_ordinary_with_origin(
+                &created.id,
+                None,
+                TransitionActor::Agent,
+                Some(TransitionSource::Cli),
+            )
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("user-only"));
+    }
+
+    #[tokio::test]
+    async fn delete_records_cli_actor_without_deleting_the_tombstone() {
+        let temp = tempdir().unwrap();
+        let tasks = TaskStore::new(temp.path().join("task-store"));
+        let application = TaskApplication::new(&tasks, None);
+        let created = application
+            .create_direct(direct_input(temp.path()))
+            .await
+            .unwrap();
+
+        application
+            .delete_ordinary_with_origin(
+                &created.id,
+                TransitionActor::Agent,
+                Some(TransitionSource::Cli),
+            )
+            .await
+            .unwrap();
+
+        let deleted = tasks.get(&created.id).await.unwrap();
+        assert!(deleted.deleted);
+        assert_eq!(deleted.status, TaskStatus::Deleted);
+        let transition = deleted.status_history.last().unwrap();
+        assert_eq!(transition.actor, TransitionActor::Agent);
+        assert_eq!(transition.source, Some(TransitionSource::Cli));
+    }
+
+    #[tokio::test]
+    async fn repeated_run_of_running_task_is_an_idempotent_noop() {
+        let temp = tempdir().unwrap();
+        let tasks = TaskStore::new(temp.path().join("task-store"));
+        let application = TaskApplication::new(&tasks, None);
+        let task = application
+            .create_direct(direct_input(temp.path()))
+            .await
+            .unwrap();
+        tasks
+            .update_status(crate::task::TaskUpdateStatusInput {
+                id: task.id.clone(),
+                status: TaskStatus::Running,
+                message: Some("already dispatched".to_string()),
+                actor: TransitionActor::System,
+                source: Some(TransitionSource::Scheduler),
+            })
+            .await
+            .unwrap();
+        let before = tasks.get(&task.id).await.unwrap();
+
+        let result = application.run(&task.id).await.unwrap();
+
+        assert!(!result.changed);
+        assert_eq!(result.attempt_ordinal, None);
+        assert_eq!(result.task.status, TaskStatus::Running);
+        let after = tasks.get(&task.id).await.unwrap();
+        assert_eq!(after.status_history.len(), before.status_history.len());
+    }
+
+    #[tokio::test]
+    async fn duplicate_run_waits_for_task_control_then_observes_running() {
+        let temp = tempdir().unwrap();
+        let tasks = TaskStore::new(temp.path().join("task-store"));
+        let application = TaskApplication::new(&tasks, None);
+        let task = application
+            .create_direct(direct_input(temp.path()))
+            .await
+            .unwrap();
+        tasks
+            .update_status(crate::task::TaskUpdateStatusInput {
+                id: task.id.clone(),
+                status: TaskStatus::Running,
+                message: Some("leader dispatched".to_string()),
+                actor: TransitionActor::System,
+                source: Some(TransitionSource::Scheduler),
+            })
+            .await
+            .unwrap();
+        let control = crate::task_scheduler::acquire_task_control(&task.id).await;
+
+        let release_control = async move {
+            tokio::task::yield_now().await;
+            drop(control);
+        };
+        let (_, result) = tokio::join!(release_control, application.run(&task.id));
+        let result = result.unwrap();
+
+        assert!(!result.changed);
+        assert_eq!(result.attempt_ordinal, None);
+        assert_eq!(result.task.status, TaskStatus::Running);
+    }
+
+    #[tokio::test]
+    async fn rerun_rejects_todo_before_writing_a_transition() {
+        let temp = tempdir().unwrap();
+        let tasks = TaskStore::new(temp.path().join("task-store"));
+        let application = TaskApplication::new(&tasks, None);
+        let task = application
+            .create_direct(direct_input(temp.path()))
+            .await
+            .unwrap();
+
+        let error = application.rerun_ordinary(&task.id).await.unwrap_err();
+        assert_eq!(error.code(), TaskApplicationErrorCode::InvalidState);
+        let unchanged = tasks.get(&task.id).await.unwrap();
+        assert_eq!(unchanged.status, TaskStatus::Todo);
+        assert_eq!(unchanged.dispatch_origin, TaskDispatchOrigin::Direct);
+        assert_eq!(unchanged.status_history.len(), 1);
+        assert_eq!(unchanged.status_history[0].actor, TransitionActor::User);
+        assert_eq!(
+            unchanged.status_history[0].source,
+            Some(TransitionSource::Ui)
+        );
+    }
+
+    #[tokio::test]
+    async fn start_rejects_terminal_task_instead_of_silently_rerunning_it() {
+        let temp = tempdir().unwrap();
+        let tasks = TaskStore::new(temp.path().join("task-store"));
+        let application = TaskApplication::new(&tasks, None);
+        let task = application
+            .create_direct(direct_input(temp.path()))
+            .await
+            .unwrap();
+        for status in [TaskStatus::Running, TaskStatus::Verifying, TaskStatus::Done] {
+            tasks
+                .update_status(crate::task::TaskUpdateStatusInput {
+                    id: task.id.clone(),
+                    status,
+                    message: None,
+                    actor: TransitionActor::System,
+                    source: Some(TransitionSource::Scheduler),
+                })
+                .await
+                .unwrap();
+        }
+        let before = tasks.get(&task.id).await.unwrap();
+
+        let error = application
+            .start_scheduled_task_with_origin(
+                &task.id,
+                TransitionActor::Agent,
+                Some(TransitionSource::Cli),
+            )
+            .await
+            .unwrap_err();
+
+        assert_eq!(error.code(), TaskApplicationErrorCode::InvalidState);
+        assert!(error.to_string().contains("task rerun"));
+        let after = tasks.get(&task.id).await.unwrap();
+        assert_eq!(after.status, TaskStatus::Done);
+        assert_eq!(after.status_history.len(), before.status_history.len());
+    }
+
+    #[tokio::test]
+    async fn create_and_start_keeps_committed_task_when_scheduler_cannot_find_it() {
+        // This private store is deliberately not registered with the process
+        // scheduler. Startup must fail without launching any external runtime.
+        let temp = tempdir().unwrap();
+        let tasks = TaskStore::new(temp.path().join("task-store"));
+        let application = TaskApplication::new(&tasks, None);
+        let (task, error) = application
+            .create_and_start_scheduled(direct_input(temp.path()))
+            .await
+            .unwrap();
+        assert!(error.is_some());
+        assert_eq!(task.status, TaskStatus::Blocked);
+        let persisted = tasks.get(&task.id).await.unwrap();
+        assert!(!persisted.deleted);
+        assert_eq!(persisted.status, TaskStatus::Blocked);
+        assert!(persisted.status_history.iter().any(|entry| entry
+            .message
+            .as_deref()
+            .is_some_and(|message| message.contains("scheduler start failed"))));
+    }
+
+    #[tokio::test]
+    async fn missing_task_is_a_typed_application_error() {
+        let temp = tempdir().unwrap();
+        let tasks = TaskStore::new(temp.path().join("task-store"));
+        let application = TaskApplication::new(&tasks, None);
+
+        let error = application.run_ordinary("missing-task").await.unwrap_err();
+
+        assert_eq!(error.code(), TaskApplicationErrorCode::NotFound);
+        assert_eq!(error.to_string(), "task not found: missing-task");
+    }
+}
