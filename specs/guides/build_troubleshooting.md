@@ -386,6 +386,120 @@ Remove-Item src-tauri/target/x86_64-pc-windows-msvc/release/resources -Recurse -
 
 ---
 
+## macOS 本机签名与授权问题
+
+### 问题：系统反复要求授予屏幕录制等权限，系统设置里却显示已授权
+
+**原因**：
+
+macOS TCC 按**签名身份**记录授权，而不是按 App 路径。`/Library/Application Support/com.apple.TCC/TCC.db`
+的 `access` 表用 `csreq` 列保存该 client 必须满足的签名要求。
+
+未指定 `APPLE_SIGNING_IDENTITY` 构建出的包是 `adhoc` 签名（`codesign -dv` 显示
+`Signature=adhoc`、`TeamIdentifier=not set`），其 designated requirement 退化为
+`cdhash H"..."`。cdhash 每次重签都会变化，因此：
+
+- 系统每次启动都把它当作新 App 重新询问；
+- 已有的「已授权」记录属于先前身份，永远无法匹配，点击允许也写不进当前身份。
+
+同时系统设置里的开关会显示旧记录的已授权状态，于是出现「已授权但仍反复弹窗」。
+
+**解决方案**：
+
+使用本机可用的签名证书构建，使 designated requirement 不含 cdhash：
+
+```bash
+security find-identity -v -p codesigning   # 查看可用身份
+export APPLE_SIGNING_IDENTITY="Apple Development: <你的证书名> (XXXXXXXXXX)"
+```
+
+Apple Development 证书签出的 DR 形如
+`identifier "com.myagents.app" and anchor apple generic and certificate leaf[subject.CN] = "..."`，
+跨重新构建保持稳定，TCC 授权即可持久。确认方式：
+
+```bash
+codesign -d -r- /Applications/MyAgents.app   # 输出不应出现 cdhash
+```
+
+清理先前身份留下的记录，让系统按新身份重新询问：
+
+```bash
+tccutil reset ScreenCapture com.myagents.app
+tccutil reset Accessibility com.myagents.app
+tccutil reset SystemPolicyAllFiles com.myagents.app
+```
+
+### 问题：直接运行 `npx tauri build` 得到的包签名不生效、运行时报 `LOCAL_RUNTIME_INVALID`
+
+**原因**：
+
+`build_macos.sh` 在 `APPLE_SIGNING_IDENTITY` 未设置时直接报错退出，该变量同时决定主
+bundle 与内嵌资源的签名身份。绕过脚本直接调用 `tauri build` 会产出 `adhoc` 签名的包，
+资源也仍是上一次 staging 的字节。
+
+更关键的是 `document-processing` 与 `speech-inference` 的 `manifest.json` 记录的是
+**已签名字节**的 sha256：`scripts/prepare-document-processing.mjs` 先对 ORT、PDFium 与
+worker 执行 `codesign`，之后才用 `digestFile()` 计算摘要。运行时
+`verify_runtime_files`（`src-tauri/src/local_inference.rs`）会逐个核对摘要，因此先按身份 A
+签资源、生成 manifest，事后再按身份 B 重签这些二进制，摘要即失效。
+
+同理，对已构建好的 `.app` 执行 `codesign --deep` 或递归重签会改写这些资源，破坏校验。
+
+**解决方案**：
+
+按 `build_macos.sh` 声明的方式构建，让资源与主 bundle 使用同一身份：
+
+```bash
+export APPLE_SIGNING_IDENTITY="Apple Development: <你的证书名> (XXXXXXXXXX)"
+./build_macos.sh
+```
+
+只需为已构建好的 `.app` 更换签名身份时，**只签主 bundle，保留资源原样**：
+
+```bash
+codesign --force --sign "$APPLE_SIGNING_IDENTITY" \
+  --options runtime --entitlements src-tauri/Entitlements.plist MyAgents.app
+```
+
+不参与 manifest 校验的内嵌二进制（`nodejs/bin/node`、`claude-agent-sdk/claude`、
+`sharp-runtime` 下的 dylib）可以单独重签。改签后按下面方式确认资源摘要未被破坏：
+
+```bash
+cd MyAgents.app/Contents/Resources/document-processing/v1
+node -e '
+const fs=require("fs"),c=require("crypto"),m=JSON.parse(fs.readFileSync("manifest.json","utf8"));
+let n=0,bad=0;
+const want=k=>k==="worker"?m.worker.sha256:m.files[k].sha256;
+const ck=(l,p)=>{const h=c.createHash("sha256").update(fs.readFileSync(p)).digest("hex");n++;
+  if(h!==want(l)){bad++;console.log("MISMATCH",l)}};
+if(m.worker)ck("worker",m.worker.path);
+for(const[k,v]of Object.entries(m.files||{}))ck(k,v.path);
+console.log(`checked=${n} bad=${bad}`);'
+```
+
+### 问题：本机所有经 `xcrun` 的工具以退出码 69 失败，提示未同意 Xcode 许可
+
+**原因**：
+
+Xcode 已升级，但 `/Library/Preferences/com.apple.dt.Xcode.plist` 中
+`IDEXcodeVersionForAgreedToGMLicense` 记录的仍是先前的版本。此后所有经 `xcrun` 中介的
+工具——`cc`、`swift`、`git`、`bindgen`、`otool`、`ld`——都会因许可检查失败而退出 69，
+表现为 cargo 链接器、Swift 包构建与 `otool` 断言莫名其妙地失败。
+
+**解决方案**：
+
+指向 CommandLineTools 工具链，它不受该许可检查约束：
+
+```bash
+export DEVELOPER_DIR=/Library/Developer/CommandLineTools
+xcrun --show-sdk-version   # 应正常输出版本号
+```
+
+本机 `src-tauri/.cargo/config.toml` 已固定该工具链，并通过 `BINDGEN_EXTRA_CLANG_ARGS`
+显式提供 sysroot（bindgen 不读取 `SDKROOT`）。这是本机构建环境 shim，不参与产品行为。
+
+---
+
 ## 代理配置问题
 
 ### localhost 连接失败
