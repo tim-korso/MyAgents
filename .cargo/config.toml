@@ -1,0 +1,31 @@
+# Local build shim: Xcode was upgraded to 27.0 while the license on this
+# machine is only agreed through 26.5, so every `xcrun`-mediated tool (and
+# therefore cargo's default `cc` linker driver) fails with
+# "You have not agreed to the Xcode license agreements".
+#
+# Point the linker at the CommandLineTools toolchain directly, which is not
+# gated by that check. The 26.5 SDK is also the one that works here: the
+# MacOSX27 SDK ships `arm64e.x1` stubs that the installed `ld` cannot parse.
+#
+# This only affects local builds; it is not part of the product source.
+
+[target.aarch64-apple-darwin]
+linker = "/Library/Developer/CommandLineTools/usr/bin/cc"
+
+[env]
+SDKROOT = "/Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk"
+MACOSX_DEPLOYMENT_TARGET = "13.0"
+# Build scripts run through `cc-rs`, which resolves a compiler name from PATH
+# rather than using the linker setting above. Bare `cc` there is the
+# /usr/bin shim and hits the same license gate, so name the CLT compilers
+# explicitly. Both the plain and target-suffixed spellings are set because
+# cc-rs prefers the target-suffixed one and falls back to the bare name.
+CC = "/Library/Developer/CommandLineTools/usr/bin/clang"
+CXX = "/Library/Developer/CommandLineTools/usr/bin/clang++"
+CC_aarch64_apple_darwin = "/Library/Developer/CommandLineTools/usr/bin/clang"
+CXX_aarch64_apple_darwin = "/Library/Developer/CommandLineTools/usr/bin/clang++"
+AR_aarch64_apple_darwin = "/Library/Developer/CommandLineTools/usr/bin/ar"
+# `bindgen` does not consult SDKROOT when it sets up libclang, so framework
+# headers (AppKit/NSWorkspace.h etc.) are not found. Passing -isysroot here is
+# the documented escape hatch and keeps every C/ObjC consumer on the same SDK.
+BINDGEN_EXTRA_CLANG_ARGS = "-isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX26.5.sdk"
