@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { dirname, join } from 'path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { McpServerDefinition } from '../../shared/config-types';
@@ -29,6 +29,7 @@ import {
   mapCodexTurnCompletedNotification,
   mapCodexTurnPlanUpdatedNotification,
   materializeManagedCodexExtensions,
+  parseCodexVersionFromUserAgent,
   resolveCodexThreadModelProvider,
   resolveCodexConversationBranchPoint,
   resolveCodexSkillExtraRoots,
@@ -393,6 +394,9 @@ describe('Codex app-server protocol helpers', () => {
 
     expect(rpc.call).toHaveBeenCalledWith('initialize', buildCodexInitializeParams(), 1234);
     expect(rpc.notify).toHaveBeenCalledWith('initialized');
+    // The handshake result is returned so callers can read the Codex build it
+    // reports back (the only version signal for system-cli sessions).
+    await expect(initializeCodexRpc(rpc, 1234)).resolves.toBeDefined();
     expect(buildCodexInitializeParams()).toMatchObject({
       capabilities: {
         experimentalApi: false,
@@ -438,6 +442,50 @@ describe('Codex app-server protocol helpers', () => {
     });
 
     expect(newKey).not.toBe(oldKey);
+  });
+
+  it('invalidates system-cli model discovery when the Codex binary behind the shim changes', () => {
+    // Homebrew keeps each version in its own Caskroom dir and repoints the
+    // stable shim on upgrade, so keying on the shim alone would keep serving
+    // the previous version's model list for the whole TTL.
+    const dir = mkdtempSync(join(tmpdir(), 'myagents-codex-shim-'));
+    try {
+      const makeShim = (version: string) => {
+        const real = join(dir, `codex-${version}`);
+        writeFileSync(real, '');
+        const shim = join(dir, `bin-${version}`, 'codex');
+        mkdirSync(dirname(shim), { recursive: true });
+        symlinkSync(real, shim);
+        return shim;
+      };
+      const oldShim = makeShim('0.155.1');
+      const newShim = makeShim('0.156.0');
+      const key = (commandPath: string) => codexModelCacheKey('system-cli', {
+        source: 'system-cli',
+        commandPath,
+        env: {},
+      });
+
+      expect(key(newShim)).not.toBe(key(oldShim));
+      // Same binary → same key, so the cache still actually caches.
+      expect(key(oldShim)).toBe(key(oldShim));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reads the running Codex version out of the initialize handshake', () => {
+    // Verbatim from `codex app-server` 0.155.1 over a system-cli handshake.
+    expect(parseCodexVersionFromUserAgent(
+      'MyAgents/0.155.1 (Mac OS 27.0.0; arm64) unknown (MyAgents; 0.4.20)',
+    )).toBe('0.155.1');
+    expect(parseCodexVersionFromUserAgent('codex/0.156.0')).toBe('0.156.0');
+    // Prerelease builds keep their suffix so the semver floor still rejects them.
+    expect(parseCodexVersionFromUserAgent('codex/0.156.0-alpha.9 (linux)')).toBe('0.156.0-alpha.9');
+    // Missing/odd payloads must not crash session start.
+    expect(parseCodexVersionFromUserAgent(undefined)).toBeUndefined();
+    expect(parseCodexVersionFromUserAgent('')).toBeUndefined();
+    expect(parseCodexVersionFromUserAgent('MyAgents unknown')).toBeUndefined();
   });
 
   it('keeps system-cli Codex app-server startup free of managed provider MCP config', () => {

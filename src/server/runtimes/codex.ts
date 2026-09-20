@@ -272,6 +272,37 @@ export function buildCodexInitializeParams(experimentalApi = false): Record<stri
   };
 }
 
+/**
+ * Subset of Codex's `initialize` result that MyAgents consumes.
+ *
+ * `userAgent` is Codex's own report of the running build, e.g.
+ * `"MyAgents/0.155.1 (Mac OS 27.0.0; arm64) unknown (MyAgents; 0.4.20)"`.
+ * It is the ONLY version signal available for `system-cli` sessions: the
+ * launch config is built from `resolveCodexCommandContext`, which for
+ * system-cli does not shell out to `--version` (that would add a process
+ * spawn to every session start).
+ */
+export interface CodexInitializeResult {
+  userAgent?: string;
+}
+
+/**
+ * Extract the Codex CLI version from an `initialize` result.
+ *
+ * Returns the bare `X.Y.Z` (or prerelease) core, matching what
+ * `codex --version` prints after its `codex-cli ` prefix, so both
+ * `supportsCodexConversationBranch` and the spawn log read the same value.
+ */
+export function parseCodexVersionFromUserAgent(userAgent: string | undefined): string | undefined {
+  if (!userAgent) return undefined;
+  // Leading `<clientName>/<version>` field.
+  const match = /^[^/\s]+\/(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\b/.exec(userAgent.trim());
+  if (match) return match[1];
+  // Fallback: first bare semver-looking token (some builds omit the prefix).
+  const loose = /\b(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)\b/.exec(userAgent);
+  return loose?.[1];
+}
+
 export function summarizeCodexThreadParamsForLog(
   params: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -1071,9 +1102,10 @@ export async function initializeCodexRpc(
   rpc: Pick<JsonRpcClient, 'call' | 'notify'>,
   timeoutMs = 10_000,
   experimentalApi = false,
-): Promise<void> {
-  await rpc.call('initialize', buildCodexInitializeParams(experimentalApi), timeoutMs);
+): Promise<CodexInitializeResult> {
+  const result = await rpc.call('initialize', buildCodexInitializeParams(experimentalApi), timeoutMs);
   rpc.notify('initialized');
+  return result as CodexInitializeResult;
 }
 
 export function buildCodexSandboxPolicy(
@@ -2344,7 +2376,17 @@ export function codexModelCacheKey(runtimeSource: RuntimeSource, context: CodexC
   if (runtimeSource === 'managed-provider') {
     return `${runtimeSource}:${context.version ?? 'unknown'}:${context.commandPath}`;
   }
-  return runtimeSource;
+  // System CLI: resolve the symlink before keying. `resolveCommand` returns the
+  // stable shim (e.g. /opt/homebrew/bin/codex), which does NOT change on
+  // `brew upgrade --cask codex` — but its realpath does, because Homebrew keeps
+  // each version in its own Caskroom directory and repoints the link. Keying on
+  // the shim alone kept serving the previous version's model list for the whole
+  // TTL after an upgrade.
+  let identity = context.commandPath;
+  try {
+    identity = realpathSync(context.commandPath);
+  } catch { /* keep the unresolved path */ }
+  return `${runtimeSource}:${identity}`;
 }
 
 // ─── JSON-RPC 2.0 Client ───
@@ -3675,7 +3717,7 @@ export class CodexRuntime implements AgentRuntime {
     });
     const mcpStartup = createCodexMcpStartupBarrier(launchConfig.mcpServerNames);
     console.log(
-      `[codex] spawn source=${runtimeSource} version=${context.version ?? 'system-cli'} ` +
+      `[codex] spawn source=${runtimeSource} version=${context.version ?? '<pending-handshake>'} ` +
       `platform=${context.platform ?? process.platform} codexHome=${context.codexHome ? '<managed>' : '<default>'}`,
     );
     let proc: Subprocess;
@@ -4088,7 +4130,23 @@ export class CodexRuntime implements AgentRuntime {
       // stable handshake surface.
       const enableManagedRawEvents = runtimeSource === 'managed-provider'
         && !options.resumeSessionId;
-      await initializeCodexRpc(codexProc.rpc, 15_000, enableManagedRawEvents);
+      const initializeResult = await initializeCodexRpc(
+        codexProc.rpc,
+        15_000,
+        enableManagedRawEvents,
+      );
+      // System CLI sessions never got a version before: the launch config is
+      // resolved without spawning `codex --version`, so `codexProc.version`
+      // stayed empty and the spawn log printed `version=system-cli`. Take the
+      // version Codex reports about itself in the handshake instead — no extra
+      // process, and it is authoritative for the binary actually running.
+      const reportedVersion = parseCodexVersionFromUserAgent(initializeResult?.userAgent);
+      if (reportedVersion) {
+        codexProc.version = reportedVersion;
+        console.log(
+          `[codex] handshake source=${runtimeSource} version=${reportedVersion}`,
+        );
+      }
       const skillProjection = await configureCodexSkillExtraRoots(
         codexProc.rpc,
         options.workspacePath,
