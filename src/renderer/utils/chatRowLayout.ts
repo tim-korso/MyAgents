@@ -23,6 +23,42 @@ const BLOCK_HEADER_HEIGHT = 44;
 const BLOCK_GROUP_CHROME_HEIGHT = 28;
 const ATTACHMENT_PLACEHOLDER_HEIGHT = 160;
 
+/**
+ * Layout derivation is keyed on message object identity.
+ *
+ * Streaming replaces the trailing message object on every token but leaves
+ * every earlier message untouched (see the `historyMessages` contract in
+ * TabContext), so identity is an accurate cache key while staying cheaper than
+ * re-reading rows whose content did not change. `viewportHeight` participates
+ * through the inner map because the estimate is viewport-dependent.
+ *
+ * WeakMap keying means entries disappear with the messages themselves; there
+ * is no session-scoped bookkeeping to leak or invalidate. A message object
+ * that is mutated in place after being cached would produce a stale entry,
+ * which is why this relies on the immutability contract rather than on deep
+ * comparison.
+ */
+const rowContractCache = new WeakMap<MessageType, Map<number, RowLayoutContract>>();
+const fingerprintCache = new WeakMap<MessageType, Map<number, string>>();
+
+function cachedByViewport<T>(
+  cache: WeakMap<MessageType, Map<number, T>>,
+  message: MessageType,
+  viewportHeight: number,
+  compute: () => T,
+): T {
+  let byViewport = cache.get(message);
+  if (!byViewport) {
+    byViewport = new Map();
+    cache.set(message, byViewport);
+  }
+  const hit = byViewport.get(viewportHeight);
+  if (hit !== undefined) return hit;
+  const value = compute();
+  byViewport.set(viewportHeight, value);
+  return value;
+}
+
 function clampHeight(value: number): number {
   return Math.max(MIN_ROW_HEIGHT, Math.min(MAX_ROW_HEIGHT, Math.ceil(value)));
 }
@@ -160,6 +196,15 @@ function userCollapseThreshold(viewportHeight: number): number {
 
 export function estimateMessageRowHeight(message: MessageType, viewportHeight: number): RowLayoutContract {
   const safeViewportHeight = Number.isFinite(viewportHeight) && viewportHeight > 0 ? viewportHeight : 800;
+  return cachedByViewport(
+    rowContractCache,
+    message,
+    safeViewportHeight,
+    () => deriveMessageRowHeight(message, safeViewportHeight),
+  );
+}
+
+function deriveMessageRowHeight(message: MessageType, safeViewportHeight: number): RowLayoutContract {
   const attachmentHeight = estimateAttachmentHeight(message);
 
   if (message.role === 'user') {
@@ -239,6 +284,16 @@ function blockFingerprint(block: ContentBlock): string {
 }
 
 export function buildMessageLayoutFingerprint(message: MessageType, viewportHeight: number): string {
+  const safeViewportHeight = Number.isFinite(viewportHeight) && viewportHeight > 0 ? viewportHeight : 800;
+  return cachedByViewport(
+    fingerprintCache,
+    message,
+    safeViewportHeight,
+    () => deriveMessageLayoutFingerprint(message, safeViewportHeight),
+  );
+}
+
+function deriveMessageLayoutFingerprint(message: MessageType, viewportHeight: number): string {
   const viewportBucket = bucket(userCollapseThreshold(viewportHeight), 80);
   const attachmentPart = `${message.attachments?.length ?? 0}:${message.attachments?.filter(a => a.isImage || a.mimeType.startsWith('image/')).length ?? 0}`;
   if (typeof message.content === 'string') {
