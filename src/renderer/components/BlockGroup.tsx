@@ -5,6 +5,8 @@ import { useTranslation } from 'react-i18next';
 import type { ContentBlock } from '@/types/chat';
 import { useNotifyRowLayoutChanged } from '@/context/ChatRowLayoutContext';
 import ProcessRow from './ProcessRow';
+import MergedInspectionRow from './MergedInspectionRow';
+import { mergeConsecutiveInspections, type DisplayItem } from '@/utils/contentBlockDisplay';
 
 interface BlockGroupProps {
   blocks: ContentBlock[];
@@ -16,6 +18,49 @@ interface BlockGroupProps {
 const FOLD_THRESHOLD = 4;
 const VISIBLE_HEAD = 1;
 const VISIBLE_TAIL = 1;
+
+/**
+ * Stable key for a display item.
+ *
+ * A merged run is keyed on its member ids — not the index — so appending the
+ * next read while streaming updates the existing row in place. The row also
+ * anchors on the same value, which keeps expand/collapse state across deltas.
+ */
+function displayItemKey(item: DisplayItem, index: number): string {
+  if (Array.isArray(item)) return `block-${item[0]?.tool?.id ?? item[0]?.id ?? index}`;
+  if ('kind' in item && item.kind === 'merged-inspection') return `merged-${item.memberIds}`;
+  const block = item as ContentBlock;
+  return `block-${block.tool?.id ?? block.id ?? index}`;
+}
+
+/** Renders one display item, dispatching merged inspection runs to their row. */
+function DisplayItemRow({
+  item,
+  index,
+  totalBlocks,
+  isStreaming,
+  onUserExpand,
+}: {
+  item: DisplayItem | ContentBlock[];
+  index: number;
+  totalBlocks: number;
+  isStreaming: boolean;
+  onUserExpand(): void;
+}) {
+  if (!Array.isArray(item) && 'kind' in item && item.kind === 'merged-inspection') {
+    return <MergedInspectionRow group={item} totalBlocks={totalBlocks} index={index} />;
+  }
+  const block = (Array.isArray(item) ? item[0] : item) as ContentBlock;
+  return (
+    <ProcessRow
+      block={block}
+      index={index}
+      totalBlocks={totalBlocks}
+      isStreaming={isStreaming}
+      onUserExpand={onUserExpand}
+    />
+  );
+}
 
 const BlockGroup = memo(function BlockGroup({
   blocks,
@@ -36,23 +81,30 @@ const BlockGroup = memo(function BlockGroup({
 
   if (blocks.length === 0) return null;
 
+  // Collapse back-to-back read-only inspections into one row before the fold
+  // math runs. A turn that inspects six files then reads as "Read ×6" instead
+  // of six rows, which is what the fold threshold was papering over. Runs are
+  // computed from the incoming blocks only, so streaming appends keep the
+  // existing row identity (keyed on the run's first tool id) and never remount.
+  const displayItems = mergeConsecutiveInspections(blocks);
+
   const isStreamingActive = isStreaming && isLatestActiveSection;
-  const shouldFold = !isUnfolded && blocks.length >= FOLD_THRESHOLD;
-  const foldedCount = shouldFold ? blocks.length - VISIBLE_HEAD - VISIBLE_TAIL : 0;
+  const shouldFold = !isUnfolded && displayItems.length >= FOLD_THRESHOLD;
+  const foldedCount = shouldFold ? displayItems.length - VISIBLE_HEAD - VISIBLE_TAIL : 0;
 
   // Collapsible layout: activates 1 step before FOLD_THRESHOLD so the DOM structure
   // is already stable when folding triggers, enabling smooth CSS Grid transition.
-  if (blocks.length > VISIBLE_HEAD + VISIBLE_TAIL) {
+  if (displayItems.length > VISIBLE_HEAD + VISIBLE_TAIL) {
     return (
       <div className="my-3 overflow-hidden rounded-lg border border-[var(--line-subtle)] bg-[var(--paper-inset)]/30 transition-all select-none">
         <div className="flex flex-col">
           {/* Head: first block — always visible */}
-          {blocks.slice(0, VISIBLE_HEAD).map((block, i) => (
-            <ProcessRow
-              key={i}
-              block={block}
+          {displayItems.slice(0, VISIBLE_HEAD).map((item, i) => (
+            <DisplayItemRow
+              key={displayItemKey(item, i)}
+              item={item}
               index={i}
-              totalBlocks={blocks.length}
+              totalBlocks={displayItems.length}
               isStreaming={isStreamingActive}
               onUserExpand={handleChildExpand}
             />
@@ -66,14 +118,14 @@ const BlockGroup = memo(function BlockGroup({
           {!shouldFold && (
             <div className="grid grid-rows-[1fr] transition-[grid-template-rows] duration-200 ease-out">
               <div className="overflow-hidden">
-                {blocks.slice(VISIBLE_HEAD, -VISIBLE_TAIL).map((block, i) => {
+                {displayItems.slice(VISIBLE_HEAD, -VISIBLE_TAIL).map((item, i) => {
                   const index = VISIBLE_HEAD + i;
                   return (
-                    <ProcessRow
-                      key={index}
-                      block={block}
+                    <DisplayItemRow
+                      key={displayItemKey(item, index)}
+                      item={item}
                       index={index}
-                      totalBlocks={blocks.length}
+                      totalBlocks={displayItems.length}
                       isStreaming={isStreamingActive}
                       onUserExpand={handleChildExpand}
                     />
@@ -116,14 +168,14 @@ const BlockGroup = memo(function BlockGroup({
           </div>
 
           {/* Tail: last block — always visible */}
-          {blocks.slice(-VISIBLE_TAIL).map((block, i) => {
-            const index = blocks.length - VISIBLE_TAIL + i;
+          {displayItems.slice(-VISIBLE_TAIL).map((item, i) => {
+            const index = displayItems.length - VISIBLE_TAIL + i;
             return (
-              <ProcessRow
-                key={index}
-                block={block}
+              <DisplayItemRow
+                key={displayItemKey(item, index)}
+                item={item}
                 index={index}
-                totalBlocks={blocks.length}
+                totalBlocks={displayItems.length}
                 isStreaming={isStreamingActive}
                 onUserExpand={handleChildExpand}
               />
@@ -138,12 +190,12 @@ const BlockGroup = memo(function BlockGroup({
   return (
     <div className="my-3 overflow-hidden rounded-lg border border-[var(--line-subtle)] bg-[var(--paper-inset)]/30 transition-all select-none">
       <div className="flex flex-col">
-        {blocks.map((block, index) => (
-          <ProcessRow
-            key={index}
-            block={block}
+        {displayItems.map((item, index) => (
+          <DisplayItemRow
+            key={displayItemKey(item, index)}
+            item={item}
             index={index}
-            totalBlocks={blocks.length}
+            totalBlocks={displayItems.length}
             isStreaming={isStreamingActive}
             onUserExpand={handleChildExpand}
           />
