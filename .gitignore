@@ -125,3 +125,6 @@ myagents_files/
 # Complete Cuse Skill+CLI fetched for the current build target
 /bundled-skills/cuse/
 /bundled-skills/.cuse-prepare-*/
+
+# goal 验收生成物（每次运行重写）；provenance 是构建记录，保留跟踪
+/data/goal-check.json

@@ -1,0 +1,38 @@
+目标：从不复用户部 app 任何资源的状态出发，用仓库自身的 prepare 入口从源码编译/准备好
+全部原生与预构建资源，产出一个签名自洽、可装入 /Applications 并正常运行的 MyAgents.app。
+
+背景：此前曾直接复用已安装 app 的 document-processing 与 speech-inference 资源来补齐产物。
+该做法能用，但绕过了本仓库的资源所有权链（prepare 入口 → staging → Tauri 打包），
+也无法证明构建可独立复现。本目标要求走通源码构建路径。
+
+领域摘要：
+  A 交付物/资产        .app 存在、七项资源非空、两份 manifest 可解析、版本 0.4.20、来源可证
+  B 功能完整性         sidecar 健康检查、前端挂载、文档与语音资源摘要匹配、session 路由可达
+  D 性能/质量/可靠性    启动无 ERROR、进程稳定、无签名失效、构建脚本单测与类型检查通过
+  F 自动化/可观测/可演示 一条命令产出验收数据、构建留痕、重建文档
+  G 评审/Gate          签名自洽、非 ad-hoc、hardened runtime、签名链完整、限制已记录
+  H 上线/扩展          装入 /Applications 并启动、前后备份可回退
+
+出口命令：
+  npm run goal-check
+
+AND gate：
+  各领域全部 true 才算完成；任一 false 继续迭代。
+
+分层：
+  L0 用户必须项，未过即阻塞完成。
+  L1 专业基准项，未过需说明；允许在明确记录原因后标注为已知限制。
+  L2 stretch（双架构、公证、自动更新签名），不阻塞 MVP。
+
+阻塞规则：
+  连续 3 轮 all 仍为 false 且失败项未变化 → 汇报阻塞，说明卡在哪个领域、试过什么、
+  需要用户做什么决定（换方案/给资源/放宽范围）。放宽条件须用户明确确认。
+
+禁止提前完成：
+  复用外部 app 资源充数、只签主 bundle 而资源用外部字节、.app 存在但 codesign 失败、
+  仅用 open -a 窗口出现判断成功、把 spctl rejected 解释为成功、跳过 goal-check 直接宣布完成。
+
+关键约束（本机）：
+  - 无 Developer ID 证书 → 无法公证；spctl 必然 rejected，属预期结果。
+  - Xcode 许可门槛使 xcrun 中介工具退出 69 → 需 DEVELOPER_DIR 指向 CommandLineTools。
+  - 资源 manifest 记录的是已签名字节摘要 → 签完资源后再重签会破坏运行时校验。

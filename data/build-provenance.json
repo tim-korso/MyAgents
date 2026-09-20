@@ -1,0 +1,61 @@
+{
+  "generatedAt": "2026-09-20T06:49:59.999Z",
+  "sourceBuilt": true,
+  "toolchain": {
+    "node": "26.7.0",
+    "cmake": "4.4.3",
+    "python": "3.13.15/3.14.7",
+    "clang": "21.0.0"
+  },
+  "resources": [
+    {
+      "id": "onnxruntime",
+      "version": "1.28.0",
+      "method": "source-build",
+      "commit": "da9b5e364c465de65c49d91e696cd6485270757f",
+      "artifact": "libonnxruntime.1.28.0.dylib",
+      "bytes": 27262976
+    },
+    {
+      "id": "pdfium",
+      "version": "chromium/7999",
+      "method": "download+sha256",
+      "note": "经脚本自身 curl 回退策略获取"
+    },
+    {
+      "id": "ocr-detector",
+      "version": "PP-OCRv6_small_det",
+      "method": "download+sha256",
+      "mirror": "hf-mirror.com"
+    },
+    {
+      "id": "ocr-recognizer",
+      "version": "PP-OCRv6_small_rec",
+      "method": "download+sha256",
+      "mirror": "hf-mirror.com"
+    },
+    {
+      "id": "speech-sherpa-source",
+      "version": "1.13.6",
+      "method": "download+sha256",
+      "mirror": "gh-proxy.com"
+    },
+    {
+      "id": "speech-model-pack",
+      "version": "local-standard-speech-v3",
+      "method": "download+signature",
+      "source": "download.myagents.io"
+    },
+    {
+      "id": "document-worker",
+      "method": "cargo-build",
+      "signingIdentity": "Apple Development (538VDGCQ56)"
+    },
+    {
+      "id": "media-worker",
+      "method": "cargo-build",
+      "signingIdentity": "Apple Development (538VDGCQ56)"
+    }
+  ],
+  "notes": "资源全部由仓库 prepare 入口准备；未复用任何已安装 app 的字节。manifest 摘要记录的是已签名字节。"
+}
