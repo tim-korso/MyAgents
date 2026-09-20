@@ -29,6 +29,7 @@ import {
     safeWriteJson,
     withFileLock,
 } from './configStore';
+import { normalizeProviderFile } from './providerFileNormalize';
 import {
     loadAppConfig,
     atomicModifyConfig,
@@ -114,11 +115,23 @@ export async function loadCustomProviders(): Promise<Provider[]> {
                     const filePath = await join(providersDir, entry.name);
                     const content = await readTextFile(filePath);
                     const parsed = JSON.parse(content);
-                    if (!parsed.id || !parsed.name || !parsed.config || !Array.isArray(parsed.models)) {
+                    const normalized = normalizeProviderFile(parsed);
+                    if (!normalized) {
                         console.warn('[configService] Invalid provider file, skipping:', entry.name);
                         continue;
                     }
-                    const p = parsed as Provider;
+                    const p = normalized.provider;
+                    if (normalized.migrated) {
+                        // Persist the folded layout so the file stops being
+                        // re-interpreted on every launch and other readers see
+                        // the canonical shape.
+                        console.warn('[configService] Migrated flat provider config:', entry.name);
+                        try {
+                            await writeProviderJson(await join(providersDir, entry.name), p);
+                        } catch (e) {
+                            console.warn('[configService] Failed to persist provider migration:', e);
+                        }
+                    }
                     // 若 primaryModel 不在 models 中（如删除模型后未正确保存），自动修正并持久化
                     if (p.models.length > 0) {
                         const modelIds = p.models.map((m: { model: string }) => m.model);
