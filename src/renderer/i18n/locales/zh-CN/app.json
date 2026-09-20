@@ -158,7 +158,9 @@
     "quote": "引用"
   },
   "blockGroup": {
-    "expandAll": "展开全部"
+    "expandAll": "展开全部",
+    "mergedInspectionCount": "{{count}} 项",
+    "mergedInspectionLabel": "{{summary}}，展开查看 {{count}} 项"
   },
   "agentStatus": {
     "expand": "展开 Agent 状态面板",

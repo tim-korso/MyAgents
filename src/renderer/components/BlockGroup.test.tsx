@@ -30,6 +30,20 @@ function task(i: number): ContentBlock {
   } as ContentBlock;
 }
 
+function read(i: number): ContentBlock {
+  return {
+    type: 'tool_use',
+    tool: {
+      id: `read-${i}`,
+      name: 'Read',
+      input: {},
+      inputJson: '{"file_path":"/tmp/f' + i + '"}',
+      result: 'line',
+      isLoading: false,
+    },
+  } as ContentBlock;
+}
+
 function processRowCount(container: HTMLElement): number {
   return container.querySelectorAll('button[aria-expanded]').length;
 }
@@ -96,5 +110,53 @@ describe('BlockGroup compact folding', () => {
     // Fold is now suppressed (grid collapsed) and the opened row's reasoning shows.
     expect(grid.style.gridTemplateRows).toBe('0fr');
     expect(screen.getByText(/REASON_0/)).toBeTruthy();
+  });
+});
+
+// A turn that inspects many files used to render one near-identical row per
+// file, which is most of the visual noise in a long turn. Consecutive read-only
+// lookups now collapse into a single summary row that expands to the originals.
+describe('BlockGroup merged inspections', () => {
+  it('renders a run of reads as one row instead of one row per file', () => {
+    const blocks = Array.from({ length: 5 }, (_, i) => read(i));
+    const { container } = render(<BlockGroup blocks={blocks} isStreaming={false} />);
+
+    // Five reads collapse to a single merged row, so only one toggle exists.
+    expect(processRowCount(container)).toBe(1);
+    expect(container.querySelector('[data-merged-inspection]')).toBeTruthy();
+    // The individual reads are not mounted while collapsed.
+    expect(container.querySelector('[data-tool-id="read-0"]')).toBeNull();
+  });
+
+  it('expands the merged row to the original tool bodies', () => {
+    const blocks = Array.from({ length: 3 }, (_, i) => read(i));
+    const { container } = render(<BlockGroup blocks={blocks} isStreaming={false} />);
+
+    fireEvent.click(screen.getAllByRole('button')[0]);
+
+    expect(container.querySelectorAll('[data-merged-inspection-member]')).toHaveLength(3);
+  });
+
+  it('keeps a single read as an ordinary row with its own tool anchor', () => {
+    const { container } = render(<BlockGroup blocks={[read(0)]} isStreaming={false} />);
+
+    expect(container.querySelector('[data-merged-inspection]')).toBeNull();
+    // A lone read stays a plain ProcessRow: one toggle, and its collapsed body
+    // is not mounted. (data-tool-id is only set for Task tools, so count rows.)
+    expect(processRowCount(container)).toBe(1);
+  });
+
+  it('does not merge reads separated by a write', () => {
+    const write: ContentBlock = {
+      type: 'tool_use',
+      tool: { id: 'write-0', name: 'Write', input: {}, inputJson: '{}', result: 'ok' },
+    } as ContentBlock;
+    const { container } = render(
+      <BlockGroup blocks={[read(0), read(1), write, read(2), read(3)]} isStreaming={false} />,
+    );
+
+    // Two merged runs plus the write row = 3 rows total.
+    expect(container.querySelectorAll('[data-merged-inspection]')).toHaveLength(2);
+    expect(processRowCount(container)).toBe(3);
   });
 });

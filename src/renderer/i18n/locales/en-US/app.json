@@ -158,7 +158,9 @@
     "quote": "Quote"
   },
   "blockGroup": {
-    "expandAll": "Expand all"
+    "expandAll": "Expand all",
+    "mergedInspectionCount": "{{count}} items",
+    "mergedInspectionLabel": "{{summary}}, expand to view {{count}} items"
   },
   "agentStatus": {
     "expand": "Expand Agent status panel",
