@@ -84,7 +84,8 @@
     "clean": "rm -rf node_modules dist .turbo .eslintcache *.tsbuildinfo src-tauri/target",
     "version": "node scripts/sync-version.js && git add src-tauri/tauri.conf.json src-tauri/Cargo.toml",
     "build:assets": "npm run build:web && npm run build:server && npm run build:bridge && npm run build:cli",
-    "build:sharp-runtime": "node scripts/prepare-sharp-runtime.mjs"
+    "build:sharp-runtime": "node scripts/prepare-sharp-runtime.mjs",
+    "goal-check": "node scripts/check-goal.js"
   },
   "dependencies": {
     "@aiden0z/pptx-renderer": "^1.0.2",
