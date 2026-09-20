@@ -1,4 +1,9 @@
 import type { ContentBlock, Message as MessageType, ToolUseSimple } from '@/types/chat';
+import {
+  isDisplayContentBlock,
+  isMergedInspectionGroup,
+  mergeConsecutiveInspections,
+} from './contentBlockDisplay';
 
 export type RowGrowthClass = 'fixed-ish' | 'can-grow';
 
@@ -155,7 +160,31 @@ function estimateContentBlocks(blocks: ContentBlock[]): {
   let canGrow = false;
   let contiguousProcessBlocks = 0;
 
-  for (const block of blocks) {
+  // Inspection runs render as a single row (see MergedInspectionRow), so they
+  // must be measured as one row here too. Charging a header per member would
+  // over-estimate by 44px each — a six-file read inflated the row by 220px,
+  // which is exactly the scroll jitter this estimate exists to prevent.
+  const displayItems = mergeConsecutiveInspections(blocks);
+
+  for (const item of displayItems) {
+    if (isMergedInspectionGroup(item)) {
+      contiguousProcessBlocks += 1;
+      height += estimateMergedInspectionHeader(item.blocks);
+      // A run keeps growing while it is still receiving members, and while any
+      // member is still running — same "can grow" contract as a lone tool row.
+      canGrow ||= item.blocks.some((b) => {
+        const tool = b.tool;
+        return Boolean(tool?.isLoading || !tool?.result);
+      });
+      for (const block of item.blocks) {
+        if (block.tool?.result && block.tool.result.length > 6000) {
+          containsHeavyMarkdown = true;
+        }
+      }
+      continue;
+    }
+    const block = isDisplayContentBlock(item) ? item : item[0];
+    if (!block) continue;
     if (block.type === 'text') {
       const textEstimate = estimateMarkdownHeight(block.text ?? '');
       height += textEstimate.height;
@@ -188,6 +217,18 @@ function estimateContentBlocks(blocks: ContentBlock[]): {
   }
 
   return { height, containsHeavyMarkdown, containsLongCodeBlock, canGrow };
+}
+
+/**
+ * Header height for a merged inspection row: one row plus the badge that shows
+ * how many members it stands for. Mirrors `estimateToolHeader` for the run's
+ * representative block, then adds the count badge.
+ */
+function estimateMergedInspectionHeader(blocks: ContentBlock[]): number {
+  const head = blocks[0];
+  let height = head ? estimateToolHeader(head) : BLOCK_HEADER_HEIGHT;
+  if (blocks.length > 1) height += 4;
+  return height;
 }
 
 function userCollapseThreshold(viewportHeight: number): number {

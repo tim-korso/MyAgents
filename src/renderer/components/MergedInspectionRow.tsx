@@ -123,6 +123,31 @@ const MergedInspectionRow = memo(function MergedInspectionRow({
       )}
     </div>
   );
-});
+}, areEqual);
+
+/**
+ * Compare by run identity and member count rather than object reference.
+ *
+ * The parent rebuilds the group object on every render (it is derived from the
+ * incoming blocks), so a reference comparison would never bail out and the row
+ * would re-render on every streaming frame.
+ */
+function areEqual(prev: MergedInspectionRowProps, next: MergedInspectionRowProps): boolean {
+  // `totalBlocks` shifts as the group grows and drives the trailing border
+  // class, so compare only whether that class can differ.
+  const prevLast = prev.index >= prev.totalBlocks - 1;
+  const nextLast = next.index >= next.totalBlocks - 1;
+  return prev.group.key === next.group.key
+    && prev.index === next.index
+    && prevLast === nextLast
+    && prev.group.blocks.length === next.group.blocks.length
+    && prev.group.blocks.every((block, i) => {
+      const other = next.group.blocks[i]?.tool;
+      return block.tool?.id === other?.id
+        && block.tool?.isLoading === other?.isLoading
+        && block.tool?.isFailed === other?.isFailed
+        && block.tool?.isError === other?.isError;
+    });
+}
 
 export default MergedInspectionRow;

@@ -36,10 +36,30 @@ export function isInspectionTool(block: ContentBlock): boolean {
 export interface MergedInspectionGroup {
   kind: 'merged-inspection';
   blocks: ContentBlock[];
+  /**
+   * Identity of the run: the FIRST member's tool id.
+   *
+   * Deliberately not all member ids. The run grows while a turn streams, so a
+   * key built from every member changes on each append and React replaces the
+   * row instead of updating it — which remounts the row and drops the user's
+   * expanded state. The first member is stable for the life of the run.
+   */
+  key: string;
+  /** All member tool ids, for debugging and row-layout invalidation. */
   memberIds: string;
 }
 
 export type DisplayItem = ContentBlock | MergedInspectionGroup;
+
+/** Narrow a display item to a merged run. */
+export function isMergedInspectionGroup(item: DisplayItem | ContentBlock[]): item is MergedInspectionGroup {
+  return !Array.isArray(item) && 'kind' in item && item.kind === 'merged-inspection';
+}
+
+/** Narrow a display item to a plain content block. */
+export function isDisplayContentBlock(item: DisplayItem | ContentBlock[]): item is ContentBlock {
+  return !Array.isArray(item) && !('kind' in item);
+}
 
 /**
  * Collapse consecutive read-only inspection blocks into one item.
@@ -58,10 +78,12 @@ export function mergeConsecutiveInspections(blocks: ContentBlock[]): DisplayItem
     if (run.length === 1) {
       result.push(run[0]!);
     } else {
+      const memberIds = run.map((b) => b.tool?.id ?? b.id ?? '').join('|');
       result.push({
         kind: 'merged-inspection',
         blocks: run,
-        memberIds: run.map((b) => b.tool?.id ?? b.id ?? '').join('|'),
+        key: run[0]?.tool?.id ?? run[0]?.id ?? '0',
+        memberIds,
       });
     }
     run = [];
