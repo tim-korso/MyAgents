@@ -5,12 +5,27 @@ import {
   estimateMessageRowHeight,
   type RowLayoutContract,
 } from './chatRowLayout';
-import type { Message } from '@/types/chat';
+import type { ContentBlock, Message } from '@/types/chat';
 
 function message(partial: Partial<Message> & Pick<Message, 'id' | 'role' | 'content'>): Message {
   return {
     timestamp: new Date('2026-07-02T00:00:00Z'),
     ...partial,
+  };
+}
+
+function readTool(id: string): ContentBlock {
+  return {
+    type: 'tool_use',
+    tool: {
+      id,
+      name: 'Read',
+      input: {},
+      streamIndex: 0,
+      inputJson: '{}',
+      result: 'some file contents',
+      isLoading: false,
+    },
   };
 }
 
@@ -90,5 +105,65 @@ describe('chatRowLayout', () => {
     );
 
     expect(buildHeightEstimateSeed(messages, layout)).toHaveLength(messages.length);
+  });
+});
+
+// The height estimate has to match what actually renders, or the scroll model
+// anchors against a fiction: an inflated estimate makes the list believe there
+// is more content below than there is, which shows up as jitter while the turn
+// streams. Merged inspection runs render as one row, so they must measure as
+// one row too.
+describe('chatRowLayout merged inspections', () => {
+  it('measures a run of reads as one row, not one per file', () => {
+    const single = estimateMessageRowHeight(
+      message({ id: 'a1', role: 'assistant', content: [readTool('r1')] }),
+      900,
+    );
+    const sixReads = estimateMessageRowHeight(
+      message({
+        id: 'a2',
+        role: 'assistant',
+        content: Array.from({ length: 6 }, (_, i) => readTool(`r${i}`)),
+      }),
+      900,
+    );
+
+    // Six reads collapse to a single row, so the estimate must stay close to a
+    // lone read rather than growing by ~44px per extra file (5 × 44 = 220px).
+    expect(sixReads.estimatedHeight).toBeLessThan(single.estimatedHeight + 60);
+  });
+
+  it('still measures unmerged writes individually', () => {
+    const write = (id: string): ContentBlock => ({
+      type: 'tool_use',
+      tool: { id, name: 'Write', input: {}, streamIndex: 0, inputJson: '{}', result: 'written' },
+    });
+    const one = estimateMessageRowHeight(
+      message({ id: 'w1', role: 'assistant', content: [write('w0')] }),
+      900,
+    );
+    const four = estimateMessageRowHeight(
+      message({
+        id: 'w2',
+        role: 'assistant',
+        content: Array.from({ length: 4 }, (_, i) => write(`w${i}`)),
+      }),
+      900,
+    );
+
+    // Writes stay separate rows, so the estimate keeps growing with them.
+    expect(four.estimatedHeight).toBeGreaterThan(one.estimatedHeight + 100);
+  });
+
+  it('marks a merged run with an unfinished member as able to grow', () => {
+    const running = readTool('r1');
+    running.tool!.isLoading = true;
+    running.tool!.result = undefined;
+    const estimate = estimateMessageRowHeight(
+      message({ id: 'a3', role: 'assistant', content: [readTool('r0'), running] }),
+      900,
+    );
+
+    expect(estimate.growthClass).toBe('can-grow');
   });
 });

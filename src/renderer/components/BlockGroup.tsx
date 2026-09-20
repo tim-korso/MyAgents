@@ -6,7 +6,11 @@ import type { ContentBlock } from '@/types/chat';
 import { useNotifyRowLayoutChanged } from '@/context/ChatRowLayoutContext';
 import ProcessRow from './ProcessRow';
 import MergedInspectionRow from './MergedInspectionRow';
-import { mergeConsecutiveInspections, type DisplayItem } from '@/utils/contentBlockDisplay';
+import {
+  isMergedInspectionGroup,
+  mergeConsecutiveInspections,
+  type DisplayItem,
+} from '@/utils/contentBlockDisplay';
 
 interface BlockGroupProps {
   blocks: ContentBlock[];
@@ -28,8 +32,11 @@ const VISIBLE_TAIL = 1;
  */
 function displayItemKey(item: DisplayItem, index: number): string {
   if (Array.isArray(item)) return `block-${item[0]?.tool?.id ?? item[0]?.id ?? index}`;
-  if ('kind' in item && item.kind === 'merged-inspection') return `merged-${item.memberIds}`;
-  const block = item as ContentBlock;
+  // `item.key` is the run's first member id, so appending another read updates
+  // this row instead of replacing it. Using the full member list would change
+  // the key on every append and remount the row, dropping its expanded state.
+  if (isMergedInspectionGroup(item)) return `merged-${item.key}`;
+  const block = item;
   return `block-${block.tool?.id ?? block.id ?? index}`;
 }
 
@@ -47,7 +54,7 @@ function DisplayItemRow({
   isStreaming: boolean;
   onUserExpand(): void;
 }) {
-  if (!Array.isArray(item) && 'kind' in item && item.kind === 'merged-inspection') {
+  if (isMergedInspectionGroup(item)) {
     return <MergedInspectionRow group={item} totalBlocks={totalBlocks} index={index} />;
   }
   const block = (Array.isArray(item) ? item[0] : item) as ContentBlock;
