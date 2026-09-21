@@ -336,6 +336,19 @@ export type UnifiedEvent = (
     contextOccupiedTokens?: number;
     /** PRD 0.2.32 — runtime 自报的 context 窗口（Codex `tokenUsage.modelContextWindow`）；不报传 null/省略 → 回落 registry/200K。 */
     runtimeContextWindow?: number | null;
+    /**
+     * 最近一次调用的**新鲜输入**（未命中 prompt cache 的部分），用于算缓存命中率。
+     *
+     * 与 `cacheReadTokens` 成对出现，且同样是「最近一次调用」口径——用 `inputTokens`
+     * 算命中率是错的，它在 Codex 下是 running_total，在 CC 下是整轮累计，两者都会让
+     * 命中率随轮次单调趋近 100%。
+     *
+     * 各 runtime 的口径差异由 adapter 负责归一：
+     *  - Codex（OpenAI 系）：`input` 已含 cached → 新鲜 = `last.inputTokens − last.cachedInputTokens`
+     *  - Anthropic 系（CC/Gemini）：`inputTokens` 本身就是新鲜部分 → 直接取用
+     * 任一侧缺失即省略，下游不显示命中率（区分「未知」与「0%」）。
+     */
+    freshInputTokens?: number;
   }
   | { kind: 'model_update'; model: string }
   | { kind: 'log'; level: 'info' | 'warn' | 'error'; message: string }

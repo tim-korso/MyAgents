@@ -5813,6 +5813,13 @@ export class CodexRuntime implements AgentRuntime {
           semantics: 'running_total',
           contextOccupiedTokens: mapped.contextOccupiedTokens,
           runtimeContextWindow: mapped.runtimeContextWindow,
+          // Cache split is per-call (`last`), unlike the running totals above.
+          ...(mapped.cacheReadTokens !== undefined
+            ? {
+                cacheReadTokens: mapped.cacheReadTokens,
+                freshInputTokens: mapped.freshInputTokens,
+              }
+            : {}),
         };
       }
 

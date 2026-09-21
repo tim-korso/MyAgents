@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 
 import {
   BUILTIN_AUTO_COMPACT_PERCENT,
+  builtinAutoCompactPercentFor,
   computeBuiltinAutoCompactThreshold,
+  contextCacheHitRate,
   computeContextUsage,
   stripModelSuffix,
   SDK_DEFAULT_CONTEXT_WINDOW,
@@ -154,5 +156,73 @@ describe('computeContextUsage', () => {
       lookupWindow: noLookup,
     });
     expect(r.contextTokens).toBe(1235);
+  });
+});
+
+// Cache hit rate surfaces "why did this turn get slow/expensive": a sudden drop
+// means the prompt prefix changed (system prompt edit, model switch, or a
+// compaction that invalidated the cache).
+describe('contextCacheHitRate', () => {
+  it('reports the cached share of the prompt', () => {
+    expect(contextCacheHitRate({ cacheReadTokens: 75_000, freshInputTokens: 25_000 })).toBe(75);
+  });
+
+  it('distinguishes unknown from a real zero', () => {
+    // Unknown: the runtime reported no split at all.
+    expect(contextCacheHitRate({})).toBeUndefined();
+    expect(contextCacheHitRate({ cacheReadTokens: 50_000 })).toBeUndefined();
+    expect(contextCacheHitRate({ freshInputTokens: 50_000 })).toBeUndefined();
+    // Real zero: nothing was reused out of a known prompt size.
+    expect(contextCacheHitRate({ cacheReadTokens: 0, freshInputTokens: 1_000 })).toBe(0);
+  });
+
+  it('treats a fully cached prompt as 100%', () => {
+    expect(contextCacheHitRate({ cacheReadTokens: 10_000, freshInputTokens: 0 })).toBe(100);
+  });
+
+  it('returns undefined when there is no prompt at all', () => {
+    expect(contextCacheHitRate({ cacheReadTokens: 0, freshInputTokens: 0 })).toBeUndefined();
+  });
+
+  it('ignores non-finite and negative input', () => {
+    expect(contextCacheHitRate({ cacheReadTokens: Number.NaN, freshInputTokens: 100 })).toBeUndefined();
+    expect(contextCacheHitRate({ cacheReadTokens: -5, freshInputTokens: 100 })).toBeUndefined();
+  });
+});
+
+// Compaction point is model-aware. A model whose effective attention sits far
+// below its registered window must compact early: by the time a 1M window is
+// 90% full the model is already drifting, so compacting then is too late.
+describe('model-aware auto-compaction threshold', () => {
+  it('keeps the window-percentage policy for models without an absolute rule', () => {
+    expect(builtinAutoCompactPercentFor('claude-opus-4-6', 1_000_000)).toBe(90);
+    expect(computeBuiltinAutoCompactThreshold(200_000, 'claude-opus-4-6')).toBe(180_000);
+  });
+
+  it('compacts flash-class models at the absolute target, not at 90% of a 1M window', () => {
+    // 90% of 1M would be 900K — far past where flash starts drifting.
+    expect(computeBuiltinAutoCompactThreshold(1_000_000, 'deepseek-v4-flash')).toBe(128_000);
+    expect(computeBuiltinAutoCompactThreshold(1_000_000, 'deepseek/deepseek-v4.1-flash')).toBe(128_000);
+    expect(computeBuiltinAutoCompactThreshold(1_000_000, 'deepseek-v4-flash-0731')).toBe(128_000);
+  });
+
+  it('does not over-tighten a window that is already small', () => {
+    // 128K window: the default percentage (115.2K) is the safer, smaller point,
+    // so the absolute rule must not push compaction past it.
+    expect(computeBuiltinAutoCompactThreshold(128_000, 'deepseek-v4-flash')).toBe(115_200);
+  });
+
+  it('leaves the non-flash DeepSeek tiers on the percentage policy', () => {
+    expect(builtinAutoCompactPercentFor('deepseek-v4-pro', 1_000_000)).toBe(90);
+    expect(builtinAutoCompactPercentFor('deepseek-v4-pro-0813', 1_000_000)).toBe(90);
+  });
+
+  it('ignores the [1m] capability suffix when matching', () => {
+    expect(computeBuiltinAutoCompactThreshold(1_000_000, 'deepseek-v4-flash[1m]')).toBe(128_000);
+  });
+
+  it('still returns 0 for an invalid window', () => {
+    expect(computeBuiltinAutoCompactThreshold(0, 'deepseek-v4-flash')).toBe(0);
+    expect(computeBuiltinAutoCompactThreshold(Number.NaN, 'deepseek-v4-flash')).toBe(0);
   });
 });

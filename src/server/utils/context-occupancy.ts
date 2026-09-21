@@ -126,3 +126,43 @@ export function chooseBuiltinContextUsageModel(params: {
 export function inferContextWindowFromSdkModelTag(model: string | undefined | null): number | null {
   return model && /\[1m\]/i.test(model) ? 1_000_000 : null;
 }
+
+/**
+ * Prompt-cache hit/miss split for the most recent call, for the usage ring.
+ *
+ * Mirrors `observedContextTokens`' single-call discipline: this must never be
+ * fed a turn aggregate. Aggregating across tool calls sums every call's cache
+ * read, which both inflates the hit count and makes the rate meaningless (it
+ * would approach 100% on any long turn regardless of real reuse).
+ *
+ * Prefers the largest `modelUsage` entry, same as occupancy, because the
+ * top-level fields can be absent on providers that only fill `modelUsage`.
+ *
+ * Returns null when either side is missing: a 0% cache hit rate and "this
+ * runtime does not report cache usage" look identical once you default to 0,
+ * and the UI would show a worrying number that has no basis.
+ */
+export function resolveContextCacheSplit(
+  perCallUsage: MessageUsage | null | undefined,
+): { cacheReadTokens: number; freshInputTokens: number } | null {
+  if (!perCallUsage) return null;
+
+  let read = finiteNonNegative(perCallUsage.cacheReadTokens);
+  let fresh = finiteNonNegative(perCallUsage.inputTokens);
+
+  if (perCallUsage.modelUsage) {
+    for (const entry of Object.values(perCallUsage.modelUsage)) {
+      const entryRead = finiteNonNegative(entry.cacheReadTokens);
+      const entryFresh = finiteNonNegative(entry.inputTokens);
+      if (entryRead + entryFresh > read + fresh) {
+        read = entryRead;
+        fresh = entryFresh;
+      }
+    }
+  }
+
+  // `fresh` may legitimately be 0 (fully cached prompt) — only the read side
+  // being absent means the runtime didn't report a split at all.
+  if (read <= 0) return null;
+  return { cacheReadTokens: Math.round(read), freshInputTokens: Math.round(fresh) };
+}

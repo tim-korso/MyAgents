@@ -25,4 +25,22 @@ export interface ContextUsage {
   windowSource: 'runtime' | 'registry' | 'default';
   /** 当前模型 id（已 strip `[1m]` 之前的原值，仅展示用）。 */
   model?: string;
+
+  /**
+   * 最近一次调用里由 prompt cache 命中的 token 数。
+   *
+   * 缓存命中是长会话的主要成本杠杆：命中部分按远低于新鲜输入的价格计费，
+   * 而且命中率骤降往往正是「为什么这一轮变慢/变贵了」的答案（改动了系统提示、
+   * 切换模型、上下文刚被压缩）。数据本来就随每次调用的 usage 到达，此前只是
+   * 没有被投影到快照里。runtime 不报时为 undefined，UI 需自行区分「0%」与
+   * 「未知」——两者含义完全不同。
+   */
+  cacheReadTokens?: number;
+
+  /**
+   * 构成当前占用的新鲜输入 token（未命中缓存的部分）。
+   *
+   * 与 `cacheReadTokens` 一起决定命中率分母。缺失时同样表示 runtime 未上报。
+   */
+  freshInputTokens?: number;
 }

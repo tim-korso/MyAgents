@@ -5,6 +5,7 @@ import {
   chooseBuiltinContextUsageModel,
   inferContextWindowFromSdkModelTag,
   observedContextTokens,
+  resolveContextCacheSplit,
   resolveContextOccupancyFromSdkBreakdown,
   resolveContextOccupancyTokens,
   resolveContextWindowFromSdkBreakdown,
@@ -191,5 +192,48 @@ describe('inferContextWindowFromSdkModelTag', () => {
     expect(inferContextWindowFromSdkModelTag('deepseek-v4-pro-260425[1m]')).toBe(1_000_000);
     expect(inferContextWindowFromSdkModelTag('deepseek-v4-pro')).toBeNull();
     expect(inferContextWindowFromSdkModelTag(undefined)).toBeNull();
+  });
+});
+
+// The split feeds the cache hit-rate readout. It must stay single-call:
+// summing across a turn's tool calls would inflate both sides and push the rate
+// toward 100% on any long turn, regardless of real reuse.
+/** Minimal MessageUsage for the split tests; only the input-side fields matter here. */
+function usage(partial: Partial<MessageUsage> & Pick<MessageUsage, 'inputTokens' | 'cacheReadTokens'>): MessageUsage {
+  return { outputTokens: 0, cacheCreationTokens: 0, ...partial };
+}
+
+describe('resolveContextCacheSplit', () => {
+  it('reports the per-call cached and fresh input', () => {
+    expect(resolveContextCacheSplit(usage({
+      inputTokens: 30_000,
+      cacheReadTokens: 50_000,
+    }))).toEqual({ cacheReadTokens: 50_000, freshInputTokens: 30_000 });
+  });
+
+  it('returns null when the runtime reports no cache read', () => {
+    // Unknown, not 0%: a runtime that does not report cache usage must not be
+    // rendered as "your cache is broken".
+    expect(resolveContextCacheSplit(usage({ inputTokens: 30_000, cacheReadTokens: 0 }))).toBeNull();
+    expect(resolveContextCacheSplit(null)).toBeNull();
+    expect(resolveContextCacheSplit(undefined)).toBeNull();
+  });
+
+  it('accepts a fully cached prompt with zero fresh input', () => {
+    expect(resolveContextCacheSplit(usage({
+      inputTokens: 0,
+      cacheReadTokens: 80_000,
+    }))).toEqual({ cacheReadTokens: 80_000, freshInputTokens: 0 });
+  });
+
+  it('prefers the largest modelUsage entry, matching occupancy', () => {
+    expect(resolveContextCacheSplit(usage({
+      inputTokens: 0,
+      cacheReadTokens: 0,
+      modelUsage: {
+        a: { inputTokens: 1_000, outputTokens: 0, cacheReadTokens: 5_000, cacheCreationTokens: 0 },
+        b: { inputTokens: 40_000, outputTokens: 0, cacheReadTokens: 60_000, cacheCreationTokens: 0 },
+      },
+    }))).toEqual({ cacheReadTokens: 60_000, freshInputTokens: 40_000 });
   });
 });

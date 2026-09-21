@@ -393,7 +393,9 @@
     "title": "Context usage",
     "compactTip": "Compact context to free up more usable space",
     "compact": "Compact",
-    "usedLabel": "Used context window"
+    "usedLabel": "Used context window",
+    "cacheHitRate": "Cache hit",
+    "cacheHit": "hit"
   },
   "space": {
     "route": {
