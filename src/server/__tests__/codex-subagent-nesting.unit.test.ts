@@ -1033,6 +1033,12 @@ describe('applyCodexSubAgentActivity (Codex 0.144.1 multi-agent v2)', () => {
       semantics: 'running_total',
       contextOccupiedTokens: 100,
       runtimeContextWindow: 272_000,
+      // Cache split rides along from `last` (per-call), never from `total`:
+      // a running total would drive any long turn's hit rate toward 100%.
+      // OpenAI-family semantics mean inputTokens already includes cached, so
+      // fresh is the remainder.
+      cacheReadTokens: 80,
+      freshInputTokens: 20,
     });
 
     parseNotification(correlation, 'rawResponse/completed', {

@@ -1048,6 +1048,25 @@ export interface AppConfig {
   enabledOfficialToolIds?: OfficialToolId[];
   officialToolSettings?: OfficialToolSettings;
 
+  // ===== Builtin Tool Surface =====
+  /**
+   * Which Claude Agent SDK builtin tools the model is offered (builtin runtime only).
+   *
+   * Why configurable: the tool schema is part of what shapes a model's opening
+   * trajectory. Measured evidence (pi-dsh-minimal, full DeepSWE v1.1, 113 tasks)
+   * is that opening V4 Flash against a deliberately narrow two-tool catalog
+   * scored 61.1% vs 53% for the same model on the official rich-tool harness —
+   * the schema, not the model, moved the number. MyAgents ships the rich catalog
+   * as its default because that is what a coding workbench needs; this field lets
+   * a user narrow it for a model that responds badly to the full surface, without
+   * a rebuild.
+   *
+   * Naming: an allowlist, so absent/empty means "the product default catalog"
+   * rather than "no tools". A session with zero tools cannot work, and silently
+   * producing one would be a footgun — see resolveBuiltinToolSurface.
+   */
+  builtinToolAllowlist?: string[];
+
   // ===== Network Proxy (General) =====
   // HTTP/SOCKS5 proxy settings for external network requests
   proxySettings?: ProxySettings;

@@ -6,7 +6,7 @@ import { join, resolve } from 'path';
 import { createRequire } from 'module';
 import { query, getSessionMessages as sdkGetSessionMessages, forkSession as sdkForkSession, deleteSession as sdkDeleteSession, type Query, type SDKUserMessage, type AgentDefinition, type HookInput, type HookJSONOutput, type PreToolUseHookInput, type PostToolUseHookInput, type PermissionRequestHookInput, type SlashCommand as SdkSlashCommand } from '@anthropic-ai/claude-agent-sdk';
 import { isRetiredBundledMcpServer } from '../shared/mcpConfig';
-import { SDK_BUILTIN_TOOLS } from './sdk-builtin-tools';
+import { resolveBuiltinToolSurface } from './sdk-builtin-tools';
 import type { CanUseTool, McpServerProvenance } from '@anthropic-ai/claude-agent-sdk';
 import type { ToolPermissionHints } from '../shared/types/toolPermission';
 import { isContextInjectedSdkTool, toolPermissionGrantKey } from './utils/sdk-tool-permission';
@@ -117,10 +117,22 @@ import { isPendingSessionId } from '../shared/constants';
 import { MANAGED_BROWSER_MCP_ID } from '../shared/browserTools';
 import { workspacePathsEqual } from '../shared/workspacePath';
 import { normalizeReasoningEffort, isSdkEffortLevel } from '../shared/reasoningEffort';
-import { BUILTIN_AUTO_COMPACT_PERCENT, computeContextUsage } from '../shared/contextUsage';
+import {
+  BUILTIN_AUTO_COMPACT_PERCENT,
+  SDK_DEFAULT_CONTEXT_WINDOW,
+  builtinAutoCompactPercentFor,
+  computeContextUsage,
+} from '../shared/contextUsage';
+import { selfAnswerAskUserQuestion } from './utils/ask-user-self-answer';
+import {
+  detectToolLoop,
+  normalizeToolArgs,
+  type ToolCallSignature,
+} from './utils/tool-loop-detector';
 import {
   chooseBuiltinContextUsageModel,
   inferContextWindowFromSdkModelTag,
+  resolveContextCacheSplit,
   resolveContextOccupancyFromSdkBreakdown,
   resolveContextOccupancyTokens,
   resolveContextWindowFromSdkBreakdown,
@@ -2309,6 +2321,16 @@ let builtinTurnTraceId = '';
 let builtinTurnTraceStartMs = 0;
 let builtinTurnTraceSessionId = '';
 let builtinTurnTraceRequestId: string | undefined;
+
+/**
+ * Recent tool calls for the current turn, used to spot A repeating a call.
+ *
+ * Turn-scoped on purpose: a repeated call from an earlier turn is not part of
+ * the current cycle, and carrying it over would make the detector fire on a
+ * legitimate "run the tests again after editing" step. Reset alongside the
+ * turn trace so the lifetime is obvious from one place.
+ */
+let builtinTurnToolCallHistory: ToolCallSignature[] = [];
 let builtinFirstDeltaTraceEmitted = false;
 const builtinToolTraceStarts = new Map<string, number>();
 // Whether the current turn produced any visible assistant text output
@@ -2458,12 +2480,19 @@ async function broadcastBuiltinContextUsage(): Promise<void> {
 
   if (occupied === null) return; // 两源都拿不到 — 不广播假占用，前端保留上次可信值
 
+  // Cache split for the ring. Read from the same single-call snapshot as the
+  // occupancy above (never the turn aggregate — see resolveContextCacheSplit).
+  // Absent on runtimes that don't report a split, in which case the snapshot
+  // simply carries no rate rather than a misleading 0%.
+  const cacheSplit = resolveContextCacheSplit(turnState.latestMainAssistantUsage);
+
   const usage = computeContextUsage({
     occupiedTokens: occupied,
     runtimeWindow,
     source: 'builtin',
     model: snapshotModel,
     lookupWindow: providerScopedLookup,
+    ...(cacheSplit ?? {}),
   });
   broadcast('chat:context-usage', { ...usage, sessionId: snapshotSessionId });
   // PRD 0.2.32 — 持久化**同一个**快照到 session 记录（单一数据源）。每轮末一次写盘，
@@ -2590,6 +2619,8 @@ function clearBuiltinTurnTrace(snapshot: BuiltinTurnTraceSnapshot | null = snaps
   builtinTurnTraceSessionId = '';
   builtinTurnTraceRequestId = undefined;
   builtinFirstDeltaTraceEmitted = false;
+  // Same lifetime as the turn trace: a loop is a within-turn phenomenon.
+  builtinTurnToolCallHistory = [];
   builtinToolTraceStarts.clear();
 }
 
@@ -6114,6 +6145,9 @@ export function buildClaudeSessionEnv(
   // provider's safe input limit once its completion budget is included (#508).
   // Pinning the value also prevents a shell/project launch environment from
   // silently changing MyAgents' session policy.
+  // Percent is pinned here so a shell/project launch environment cannot silently
+  // change session policy; the model-aware refinement lands further down where
+  // the resolved window is known (see the auto-compact window block).
   env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = String(BUILTIN_AUTO_COMPACT_PERCENT);
 
   // Expose the managed npm prefix for command-local use only. Do NOT set
@@ -6358,6 +6392,25 @@ export function buildClaudeSessionEnv(
     if (resolvedModel) {
       console.log(`[env] No contextLength found for model=${resolvedModel} — SDK default 200K applies`);
     }
+  }
+
+  // Model-aware compaction point. The window cap above only bounds the
+  // denominator; it says nothing about where compaction should actually fire.
+  // Models whose effective attention sits far below their registered window
+  // (deepseek-v4-flash on 1M) compact early on purpose — by the time a 1M
+  // window is 90% full the model is already drifting, so compacting then is
+  // too late. Percent is derived from an absolute token target so the runtime
+  // and the UI ring compute the same number from the same inputs.
+  const effectiveAutocompactWindow = modelContextLength && modelContextLength > 0
+    ? modelContextLength
+    : SDK_DEFAULT_CONTEXT_WINDOW;
+  const autocompactPercent = builtinAutoCompactPercentFor(resolvedModel, effectiveAutocompactWindow);
+  if (autocompactPercent !== BUILTIN_AUTO_COMPACT_PERCENT) {
+    env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = String(autocompactPercent);
+    console.log(
+      `[env] CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=${autocompactPercent.toFixed(2)}`
+      + ` (model=${resolvedModel ?? '(unknown)'}, window=${effectiveAutocompactWindow})`,
+    );
   }
 
   // OpenAI Bridge: if provider uses OpenAI protocol, loopback to sidecar
@@ -11252,7 +11305,13 @@ async function startStreamingSession(preWarm = false): Promise<void> {
       mcpServers: sdkMcpServersInitial,
       // Product visibility boundary. Permission policy remains separately
       // owned by allowedTools/disallowedTools/canUseTool/Hooks below.
-      tools: [...SDK_BUILTIN_TOOLS],
+      // Optional narrowing for a model that opens badly against the full
+      // catalog (see builtinToolAllowlist). Defaults to the whole catalog.
+      tools: resolveBuiltinToolSurface(
+        Array.isArray(adminConfigForSession.builtinToolAllowlist)
+          ? adminConfigForSession.builtinToolAllowlist.filter((n): n is string => typeof n === 'string')
+          : undefined,
+      ),
       // PRD 0.2.17 — Claude plugin injection. SDK accepts
       // `plugins: [{ type: 'local', path }]`; it then scans each path for
       // .claude-plugin/plugin.json and wires up the contained
@@ -11315,6 +11374,35 @@ async function startStreamingSession(preWarm = false): Promise<void> {
           return {
             behavior: 'deny' as const,
             message: mcpCheck.reason
+          };
+        }
+
+        // Break repeating tool loops before they run. A loop never errors — the
+        // model re-issues the call, sees the same output, and concludes nothing
+        // new — so from the outside it is indistinguishable from a hang: the
+        // turn stays running and tokens keep burning with no signal. Denying
+        // with an instruction sends the model a different next step instead.
+        //
+        // Placed before the fullAgency fast-path, which returns early: a loop is
+        // exactly the case where "auto-approve everything" is the wrong answer.
+        const loopVerdict = detectToolLoop(
+          builtinTurnToolCallHistory,
+          { name: toolName, args: normalizeToolArgs(input) },
+        );
+        if (loopVerdict.looping) {
+          console.warn(
+            `[tool-loop] ${toolName} repeated ${loopVerdict.repeatCount}× with identical arguments; `
+            + 'returning a correction instead of running it again',
+          );
+          return {
+            behavior: 'deny' as const,
+            message: loopVerdict.correction ?? '检测到重复调用，请换一种方式推进。',
+            // Normally no interrupt: the turn should continue and let the model
+            // adapt, since stopping would reproduce the "session died" symptom
+            // this exists to prevent. Past LOOP_ABORT_THRESHOLD the model has
+            // ignored the correction and is not converging — keeping it alive
+            // then is just a slower hang, so surface the stuck turn instead.
+            interrupt: loopVerdict.exhausted,
           };
         }
 
@@ -11490,6 +11578,43 @@ async function startStreamingSession(preWarm = false): Promise<void> {
               interrupt: true,
             };
           }
+
+          // A question with nobody attached must not park the turn. The wait
+          // has no wall-clock timeout (see pendingAskUserQuestions) and the
+          // inactivity watchdog deliberately treats a pending question as
+          // "paused" rather than hung — so an unanswered question stops the
+          // turn with no error, no timeout and no progress, which is
+          // indistinguishable from a hang.
+          //
+          // Two conditions define "nobody attached":
+          //  1. A headless scenario: cron and registeredAgent run on a
+          //     schedule or on Space events with no human at a desktop.
+          //     `desktop` is excluded on purpose — there the card is the point.
+          //  2. A fully-autonomous permission mode (`fullAgency` is the only
+          //     one; the `no-restrictions` spelling belongs to codex, not here),
+          //     where the session is already licensed to decide alone.
+          //
+          // Answering from the model's own first option keeps the turn moving
+          // and hands the decision back to it. Secret questions are never
+          // invented — selfAnswerAskUserQuestion returns null and the normal
+          // path reports the gap instead.
+          const headlessScenario = currentScenario.type === 'cron'
+            || currentScenario.type === 'registeredAgent'
+            || currentScenario.type === 'agent-channel';
+          const autonomous = configState.currentPermissionMode === 'fullAgency';
+          if ((headlessScenario || autonomous) && !supportsAskUserQuestionNativeCard(currentScenario)) {
+            const selfAnswers = selfAnswerAskUserQuestion(input);
+            if (selfAnswers) {
+              console.log('[canUseTool] AskUserQuestion self-answered (autonomous mode, no interactive host)');
+              const inputWithAnswers = input as Record<string, unknown>;
+              const askQuestions = (inputWithAnswers as { questions?: AskUserQuestion[] }).questions;
+              return {
+                behavior: 'allow' as const,
+                updatedInput: { ...inputWithAnswers, answers: withQuestionTextAnswerKeys(askQuestions, selfAnswers) },
+              };
+            }
+          }
+
           console.log('[canUseTool] AskUserQuestion detected, prompting user');
           const answers = await handleAskUserQuestion(input, options.signal);
           if (answers === null) {
