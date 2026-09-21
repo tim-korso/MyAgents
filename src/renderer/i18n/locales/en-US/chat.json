@@ -906,6 +906,14 @@
       "closeTitle": "Close (Esc)",
       "closeAria": "Close search"
     },
+    "outline": {
+      "title": "Turns",
+      "empty": "No turns yet",
+      "closeTitle": "Close navigation",
+      "closeAria": "Close turn navigation",
+      "toggleTitle": "Turn navigation",
+      "toggleAria": "Open turn navigation"
+    },
     "split": {
       "closeFile": "Close file",
       "terminal": "Terminal",

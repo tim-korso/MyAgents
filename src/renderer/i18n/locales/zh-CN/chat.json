@@ -906,6 +906,14 @@
       "closeTitle": "关闭 (Esc)",
       "closeAria": "关闭搜索"
     },
+    "outline": {
+      "title": "会话导航",
+      "empty": "暂无提问记录",
+      "closeTitle": "关闭导航",
+      "closeAria": "关闭会话导航",
+      "toggleTitle": "会话导航",
+      "toggleAria": "打开会话导航"
+    },
     "split": {
       "closeFile": "关闭文件",
       "terminal": "终端",
