@@ -44,6 +44,8 @@ import {
 } from '@/utils/sessionConfigPushPolicy';
 import QueryNavigator from '@/components/chat/QueryNavigator';
 import ChatSearchPanel from '@/components/ChatSearchPanel';
+import ChatOutlinePanel from '@/components/ChatOutlinePanel';
+import { activeOutlineIndex, buildChatOutline, type ChatOutlineEntry } from '@/utils/chatOutline';
 import { useChatSearch, isHighlightApiSupported } from '@/hooks/useChatSearch';
 import { useBrowserResourceReady } from '@/hooks/useBrowserResourceReady';
 import SelectionCommentMenu from '@/components/SelectionCommentMenu';
@@ -3339,6 +3341,7 @@ export default function Chat({ registerFileEditSubmitter, windowPresentation, on
   // messages[] and reached via ChatScrollController on navigation.
   // Full cross-session search still lives in the global search engine.
   const [chatSearchOpen, setChatSearchOpen] = useState(false);
+  const [chatOutlineOpen, setChatOutlineOpen] = useState(false);
   const chatSearch = useChatSearch({
     scrollerRef: scrollerRef as React.RefObject<HTMLElement | null>,
     messages: chatScrollModel.data,
@@ -3346,6 +3349,62 @@ export default function Chat({ registerFileEditSubmitter, windowPresentation, on
     pauseAutoScroll,
     active: chatSearchOpen,
   });
+
+  // Turn index for jumping around a long session. Derived, not stored: the
+  // outline is a projection of the transcript, so it cannot drift from it.
+  //
+  // Spans history + current, in that order: the user looking for "the turn
+  // where I asked about the migration" is usually looking at something older
+  // than the current session tail, which `messages` alone would omit.
+  const chatOutline = useMemo(
+    () => buildChatOutline([...historyMessages, ...messages]),
+    [historyMessages, messages],
+  );
+
+  const handleOutlineJump = useCallback((entry: ChatOutlineEntry) => {
+    scrollToMessage(entry.id, { behavior: 'smooth', align: 'start' });
+  }, [scrollToMessage]);
+
+  // Track which turn the viewport is reading, for the active highlight. Measures
+  // on scroll rather than with an IntersectionObserver per entry because the
+  // outline can list hundreds of turns while only a handful are mounted — a
+  // threshold of `undefined`/NaN simply means "not measured yet", which
+  // activeOutlineIndex already treats as "not passed".
+  const [outlineActiveIndex, setOutlineActiveIndex] = useState(-1);
+  const outlineMeasureRef = useRef<() => void>(() => {});
+  outlineMeasureRef.current = () => {
+    const container = chatContentRef.current;
+    if (!container) return;
+    // Measure against the first mounted row's own offset parent rather than
+    // guessing which ancestor scrolls: the transcript sits inside a Virtuoso
+    // scroller whose element changes between the virtualized and fallback
+    // paths, and a wrong ancestor would yield a constant offset for every
+    // entry (so the highlight would never move).
+    let scroller: HTMLElement | null = null;
+    const probe = container.querySelector<HTMLElement>(`[data-message-id]`);
+    for (let el = probe?.parentElement ?? null; el; el = el.parentElement) {
+      const overflowY = getComputedStyle(el).overflowY;
+      if (overflowY === 'auto' || overflowY === 'scroll') { scroller = el; break; }
+    }
+    const root = scroller ?? container;
+    const rootTop = root.getBoundingClientRect().top;
+    const tops = chatOutline.map((entry) => {
+      const el = root.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(entry.id)}"]`);
+      return el ? el.getBoundingClientRect().top - rootTop : Number.NaN;
+    });
+    setOutlineActiveIndex(activeOutlineIndex(tops));
+  };
+  useEffect(() => {
+    if (!chatOutlineOpen) return;
+    const handler = () => outlineMeasureRef.current();
+    handler();
+    window.addEventListener('scroll', handler, { capture: true, passive: true });
+    window.addEventListener('resize', handler);
+    return () => {
+      window.removeEventListener('scroll', handler, { capture: true });
+      window.removeEventListener('resize', handler);
+    };
+  }, [chatOutlineOpen, chatOutline]);
 
   const handleLoadOlderMessages = useCallback(() => {
     void loadOlderMessages({
@@ -3363,11 +3422,17 @@ export default function Chat({ registerFileEditSubmitter, windowPresentation, on
     setChatSearchOpen(false);
     chatSearchSetQueryRef.current('');
   }, []);
+  const closeChatOutline = useCallback(() => setChatOutlineOpen(false), []);
   // Esc / Cmd+W closes the panel first. z-index 100 sits between the split
   // panel (0) and overlay layers (200+), matching the shared overlay hierarchy.
   useCloseLayer(() => {
     if (!chatSearchOpen) return false;
     closeChatSearch();
+    return true;
+  }, 100);
+  useCloseLayer(() => {
+    if (!chatOutlineOpen) return false;
+    closeChatOutline();
     return true;
   }, 100);
   useCloseLayer(() => {
@@ -3398,6 +3463,24 @@ export default function Chat({ registerFileEditSubmitter, windowPresentation, on
   useEffect(() => {
     if (!isActive && chatSearchOpen) closeChatSearch();
   }, [isActive, chatSearchOpen, closeChatSearch]);
+  // Turn navigation toggle. Cmd/Ctrl+G because Cmd+F is the text finder and
+  // this is a different question ("which turn?" vs "which words?").
+  useEffect(() => {
+    if (!isActive) return;
+    const handler = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey)) return;
+      if (event.key.toLowerCase() !== 'g') return;
+      event.preventDefault();
+      setChatOutlineOpen((open) => !open);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [isActive]);
+  // Same rationale as the search panel: a background tab must not keep an
+  // overlay mounted, and returning to the tab should show fresh state.
+  useEffect(() => {
+    if (!isActive && chatOutlineOpen) closeChatOutline();
+  }, [isActive, chatOutlineOpen, closeChatOutline]);
 
   // Auto-focus input when Tab becomes active
   useEffect(() => {
@@ -5238,6 +5321,16 @@ export default function Chat({ registerFileEditSubmitter, windowPresentation, on
           {/* In-page text finder — Cmd/Ctrl+F */}
           {chatSearchOpen && (
             <ChatSearchPanel controller={chatSearch} onClose={closeChatSearch} />
+          )}
+          {/* Turn index — Cmd/Ctrl+G. Navigates by position, which is what
+              "the turn where I asked about X" actually is. */}
+          {chatOutlineOpen && (
+            <ChatOutlinePanel
+              entries={chatOutline}
+              activeIndex={outlineActiveIndex}
+              onJump={handleOutlineJump}
+              onClose={closeChatOutline}
+            />
           )}
           {/* Drop zone overlay for file drag */}
           <DropZoneOverlay
