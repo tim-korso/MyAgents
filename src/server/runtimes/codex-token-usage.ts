@@ -46,6 +46,18 @@ export interface MappedCodexUsage {
   contextOccupiedTokens: number | undefined;
   /** runtime 自报的 context 窗口；缺省/非数字 → null（下游回落 registry/200K）。 */
   runtimeContextWindow: number | null;
+  /**
+   * Prompt cache 命中明细，取自**最近一次调用**（`last`），非累计。
+   *
+   * Codex 是 OpenAI 系语义：`last.inputTokens` 是本次送入的 prompt 总量，其中
+   * `cachedInputTokens` 是被缓存复用的部分。所以新鲜输入 = input − cached。
+   * 用 `total` 算命中率是错的——那是整轮累计，任何长回合都会趋近 100%。
+   *
+   * 两者任一缺失即为 undefined（runtime 未上报拆分），下游据此不显示命中率，
+   * 而不是把「未知」画成 0%。
+   */
+  cacheReadTokens?: number;
+  freshInputTokens?: number;
 }
 
 /** 解析 Codex tokenUsage payload。`total` 缺失（异常 payload）→ null。 */
@@ -54,11 +66,23 @@ export function mapCodexTokenUsage(
 ): MappedCodexUsage | null {
   if (!usage?.total) return null;
   const lastInput = usage.last?.inputTokens;
+  const lastCached = usage.last?.cachedInputTokens;
+  // Only report a split when both sides are real numbers. `inputTokens - cached`
+  // would go negative on a malformed payload, so clamp at 0 rather than emit a
+  // nonsensical denominator.
+  const hasCacheSplit = typeof lastInput === 'number' && typeof lastCached === 'number'
+    && lastInput >= 0 && lastCached >= 0;
   return {
     runningTotalInputTokens: usage.total.inputTokens ?? 0,
     runningTotalOutputTokens: usage.total.outputTokens ?? 0,
     contextOccupiedTokens: typeof lastInput === 'number' && lastInput > 0 ? lastInput : undefined,
     runtimeContextWindow: typeof usage.modelContextWindow === 'number' ? usage.modelContextWindow : null,
+    ...(hasCacheSplit
+      ? {
+          cacheReadTokens: Math.min(lastCached, lastInput),
+          freshInputTokens: Math.max(0, lastInput - lastCached),
+        }
+      : {}),
   };
 }
 

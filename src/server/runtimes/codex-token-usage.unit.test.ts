@@ -109,3 +109,52 @@ describe('addCodexExactResponseUsage', () => {
     })).toBeNull();
   });
 });
+
+// Cache hit rate must come from the most recent call. Using `total` would make
+// the rate climb toward 100% on any long turn regardless of real reuse.
+describe('mapCodexTokenUsage cache split', () => {
+  it('splits last.inputTokens into cached and fresh', () => {
+    const mapped = mapCodexTokenUsage({
+      total: breakdown(500_000, 400_000, 12_000),
+      last: breakdown(80_000, 50_000),
+    });
+
+    // OpenAI-family semantics: inputTokens already includes cached, so fresh is
+    // the remainder rather than a separate bucket.
+    expect(mapped?.cacheReadTokens).toBe(50_000);
+    expect(mapped?.freshInputTokens).toBe(30_000);
+  });
+
+  it('omits the split when the runtime does not report cached tokens', () => {
+    const mapped = mapCodexTokenUsage({
+      total: breakdown(500_000, 0, 12_000),
+      last: { inputTokens: 80_000 },
+    });
+
+    // Absent, not zero — "unknown" and "0% hit" are different, and showing 0%
+    // would send the user chasing a cache problem that does not exist.
+    expect(mapped?.cacheReadTokens).toBeUndefined();
+    expect(mapped?.freshInputTokens).toBeUndefined();
+  });
+
+  it('a fully cached prompt reports zero fresh input rather than dropping the split', () => {
+    const mapped = mapCodexTokenUsage({
+      total: breakdown(100_000, 100_000),
+      last: breakdown(100_000, 100_000),
+    });
+
+    expect(mapped?.cacheReadTokens).toBe(100_000);
+    expect(mapped?.freshInputTokens).toBe(0);
+  });
+
+  it('never reports more cached tokens than the prompt itself', () => {
+    // A malformed payload must not produce negative fresh input.
+    const mapped = mapCodexTokenUsage({
+      total: breakdown(1_000, 0),
+      last: breakdown(1_000, 5_000),
+    });
+
+    expect(mapped?.cacheReadTokens).toBe(1_000);
+    expect(mapped?.freshInputTokens).toBe(0);
+  });
+});

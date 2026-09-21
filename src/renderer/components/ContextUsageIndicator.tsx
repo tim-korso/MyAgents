@@ -16,7 +16,7 @@ import { Minimize2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 import { useTabState } from '@/context/TabContext';
-import { computeBuiltinAutoCompactThreshold } from '../../shared/contextUsage';
+import { computeBuiltinAutoCompactThreshold, contextCacheHitRate } from '../../shared/contextUsage';
 import Popover from './ui/Popover';
 import Tip from './Tip';
 
@@ -97,8 +97,14 @@ export default function ContextUsageIndicator({ onCompact }: ContextUsageIndicat
 
   const { contextTokens, contextWindow, usedPercent, source, windowSource } = contextUsage;
   const isBuiltin = source === 'builtin';
-  const compactAt = computeBuiltinAutoCompactThreshold(contextWindow);
+  // Pass the model so the projected compaction point matches what the runtime
+  // actually injects. Without it the ring would advertise a 90%-of-window
+  // threshold while the sidecar compacts far earlier for flash-class models —
+  // the user would be told they have headroom that does not exist.
+  const compactAt = computeBuiltinAutoCompactThreshold(contextWindow, contextUsage.model);
   const showCompact = !!onCompact;
+  // undefined = runtime 没报拆分，与「命中 0%」不同，故不显示而非显示 0%。
+  const cacheHitRate = contextCacheHitRate(contextUsage);
 
   // 窗口来源描述 + （仅 builtin）共享 90% policy 投影的自动压缩阈值；
   // 外部 runtime 的压缩阈值各不相同（Codex 有自己的 auto-compact），不能套用同一文案（review #W4）。
@@ -175,6 +181,30 @@ export default function ContextUsageIndicator({ onCompact }: ContextUsageIndicat
             {' / '}
             {formatTokens(contextWindow)} tokens
           </div>
+
+          {/* Prompt cache 命中率。只在 runtime 上报了拆分时显示——未知与 0%
+              是两回事，把未知画成 0% 会让人误以为缓存完全失效。 */}
+          {cacheHitRate !== undefined && (
+            <div className="mb-1 flex items-center gap-1.5 text-xs tabular-nums text-[var(--ink-muted)]">
+              <span>{t('contextUsage.cacheHitRate')}</span>
+              <span
+                className={
+                  cacheHitRate >= 60
+                    ? 'font-semibold text-[var(--success)]'
+                    : cacheHitRate >= 20
+                      ? 'font-semibold text-[var(--ink-secondary)]'
+                      : 'font-semibold text-[var(--accent-warm)]'
+                }
+              >
+                {cacheHitRate.toFixed(0)}%
+              </span>
+              {contextUsage.cacheReadTokens !== undefined && (
+                <span className="text-[var(--ink-faint)]">
+                  ({formatTokens(contextUsage.cacheReadTokens)} {t('contextUsage.cacheHit')})
+                </span>
+              )}
+            </div>
+          )}
 
           {/* 底部弱灰说明（窗口来源 + 压缩点） */}
           <div className="mt-2 border-t border-[var(--line)] pt-2 text-xs leading-relaxed text-[var(--ink-faint)]">

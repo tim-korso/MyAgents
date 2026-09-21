@@ -7721,6 +7721,12 @@ function applyUnifiedEvent(event: UnifiedEvent): void {
           source: ctxRuntime,
           model: nextUsage.model,
           lookupWindow: lookupModelContextLength,
+          // Per-call cache split from the adapter (Codex: last.input − last.cached).
+          // Deliberately not derived from `event.inputTokens`, which is a running
+          // total here and would drive the rate to 100% on every long turn.
+          ...(typeof event.cacheReadTokens === 'number' && typeof event.freshInputTokens === 'number'
+            ? { cacheReadTokens: event.cacheReadTokens, freshInputTokens: event.freshInputTokens }
+            : {}),
         });
         const ctxSessionId = currentTurnTraceSessionId || getExternalLifecycleSessionId() || undefined;
         broadcast('chat:context-usage', ctxSessionId ? { ...ctxUsage, sessionId: ctxSessionId } : ctxUsage);

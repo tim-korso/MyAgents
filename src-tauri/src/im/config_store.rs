@@ -182,15 +182,34 @@ fn project_agent_workspaces_with(
         .filter_map(|mut agent| {
             if let Some(project_claims) = claims.get(&agent.id) {
                 if project_claims.len() > 1 {
-                    ulog_warn!(
-                        "[agent] Agent {} is claimed by multiple Projects; skipping this target",
-                        agent.id
+                    // Logged at debug, not warn. This runs on the periodic
+                    // config re-read path, so a single mis-owned agent used to
+                    // emit tens of thousands of identical warnings and bury
+                    // every other line in the log. The condition is a standing
+                    // data problem, not a per-pass event: reporting the agent's
+                    // name and the competing paths once per pass at debug keeps
+                    // it diagnosable without flooding. Use `ulog` filters to
+                    // surface it when investigating agent routing.
+                    let paths = project_claims
+                        .iter()
+                        .filter_map(|index| projects.get(*index))
+                        .filter_map(|project| project.path.as_deref())
+                        .filter(|path| !path.is_empty())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    ulog_debug!(
+                        "[agent] Agent '{}' ({}) is claimed by {} Projects ({}); skipping this target",
+                        agent.name,
+                        agent.id,
+                        project_claims.len(),
+                        paths
                     );
                     return None;
                 }
                 if conflicted_project_indices.contains(&project_claims[0]) {
-                    ulog_warn!(
-                        "[agent] Agent {} belongs to a duplicate Project workspace; skipping this target",
+                    ulog_debug!(
+                        "[agent] Agent '{}' ({}) belongs to a duplicate Project workspace; skipping this target",
+                        agent.name,
                         agent.id
                     );
                     return None;
