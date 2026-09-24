@@ -9,6 +9,10 @@ import type { TranscriptBatch } from './codec';
 
 export const TRANSCRIPT_BATCH_MS = 100;
 export const TRANSCRIPT_BATCH_BYTES = 256 * 1024;
+/** Streaming deltas arrive per token; one persisted operation per token would
+ *  spend ~200 bytes of JSON envelope on a handful of characters. Adjacent
+ *  same-target appends coalesce up to this bound before the queue is written. */
+export const TRANSCRIPT_APPEND_COALESCE_CHARS = 32 * 1024;
 const HEALTH_TIMEOUT_MS = 10_000;
 const RETRY_MS = [500, 1500, 5000, 15_000, 30_000];
 
@@ -67,6 +71,8 @@ export class TranscriptWriter {
   private healthTimer: ReturnType<typeof setTimeout> | null = null;
   private retryAttempt = 0;
   private state: TranscriptSaveStatus['state'] = 'healthy';
+  /** A missing/empty target may be rebuilt once; never in a loop. */
+  private rebuiltEmptyTarget = false;
   private incidentId: string | undefined;
   private reason: TranscriptSaveStatus['reason'];
   private readonly waiters = new Set<() => void>();
@@ -106,6 +112,19 @@ export class TranscriptWriter {
       applyTranscriptOperation(this.projection, operation);
       this.liveRevision += 1;
       this.publishOperation(operation);
+      // The live projection and the published operation above stay per-delta;
+      // only the persisted form is coalesced. Observers therefore keep their
+      // exact streaming granularity while the file stops paying an envelope
+      // per token.
+      if (!this.needsBaseline && this.coalesceAppend(operation)) {
+        this.watchHealth();
+        if (this.queuedBytes >= TRANSCRIPT_BATCH_BYTES && this.retryAttempt === 0) {
+          if (this.timer) clearTimeout(this.timer);
+          this.timer = null;
+          this.startWrite();
+        } else this.schedule(boundary ? 0 : TRANSCRIPT_BATCH_MS);
+        return;
+      }
       const detached = structuredClone(operation);
       const bytes = Buffer.byteLength(JSON.stringify(detached));
       // Retain every pending operation during slow/failed IO. The queue has no
@@ -130,6 +149,40 @@ export class TranscriptWriter {
       this.blocked = true;
       this.fail('invalid-history', 'degraded');
     }
+  }
+
+  /**
+   * Extends the newest queued `text-append` when this delta continues it.
+   *
+   * The merged operation is byte-identical to replaying its parts: offsets stay
+   * contiguous because only an append touching the current end qualifies, and
+   * the queue's revision range still spans every observation. Gaps, a different
+   * target, or a reset (which arrives as an intervening non-append operation)
+   * all break the run and start a new entry.
+   */
+  private coalesceAppend(operation: TranscriptOperation): boolean {
+    if (operation.kind !== 'text-append') return false;
+    const last = this.queue.at(-1);
+    const previous = last?.operation;
+    if (!last || !previous || previous.kind !== 'text-append') return false;
+    if (previous.messageId !== operation.messageId || previous.blockId !== operation.blockId
+      || previous.field !== operation.field || previous.subagentToolId !== operation.subagentToolId) return false;
+    if (previous.offset + previous.text.length !== operation.offset) return false;
+    if (previous.text.length >= TRANSCRIPT_APPEND_COALESCE_CHARS) return false;
+    // Bound the merged text so one record stays well inside the line limit. An
+    // over-long delta is simply left as its own entry rather than truncated:
+    // its projection is already applied, so the next offset stays contiguous.
+    const room = TRANSCRIPT_APPEND_COALESCE_CHARS - previous.text.length;
+    if (operation.text.length > room) return false;
+    const merged = { ...previous, text: previous.text + operation.text };
+    // Add only the encoded delta's contents. Re-serializing the growing merged
+    // operation on every token would itself be quadratic for a 32 KiB window.
+    const encodedDeltaBytes = Buffer.byteLength(JSON.stringify(operation.text)) - 2;
+    last.operation = merged;
+    last.revision = this.liveRevision;
+    last.bytes += encodedDeltaBytes;
+    this.queuedBytes += encodedDeltaBytes;
+    return true;
   }
 
   /** Birth/metadata publication shares the serial IO queue without inventing a content event. */
@@ -272,8 +325,21 @@ export class TranscriptWriter {
       this.emit();
     }).catch(error => {
       if (error instanceof TranscriptStorageError && error.reason === 'invalid-history') {
-        this.blocked = true;
-        this.fail('invalid-history', 'degraded');
+        // The file lost its committed content (a zero-length or header-only
+        // target whose generation no longer matches). The live projection is
+        // the only surviving copy of the conversation, so rebuilding it as a
+        // baseline is recovery, not data loss. Attempted exactly once: if the
+        // rewrite cannot be published either, the original permanent stop
+        // stands rather than retrying a mutation that keeps failing.
+        if (this.recordingComplete && !this.rebuiltEmptyTarget) {
+          this.rebuiltEmptyTarget = true;
+          this.needsBaseline = true;
+          this.retryBatch = null;
+          this.fail('io', 'retrying');
+        } else {
+          this.blocked = true;
+          this.fail('invalid-history', 'degraded');
+        }
       } else {
         // Exact batch identity survives a sync/ack failure; later operations
         // stay queued until this batch has been confirmed.

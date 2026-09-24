@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTranscriptProjection, transcriptMessages } from '../../shared/sessionTranscript';
-import { TranscriptWriter, type TranscriptStorage } from './writer';
+import { TranscriptStorageError, TranscriptWriter, type TranscriptStorage } from './writer';
 
 function setup(storage?: Partial<TranscriptStorage>) {
   const append = vi.fn<TranscriptStorage['append']>().mockResolvedValue();
@@ -137,4 +137,37 @@ it('waits for physical mutation IO beyond health/flush deadlines and reports rea
   expect(await failed.writer.flushForMutation()).toBe(false);
   expect(failed.writer.status.reason).toBe('io');
   await failed.writer.close();
+});
+
+// 'invalid-history' used to be a permanent stop. When the file simply lost its
+// committed content the live projection is the only surviving copy, so the
+// writer rebuilds it as a baseline — but only once.
+describe('recovering a target that lost its committed content', () => {
+  it('rebuilds the history as a baseline instead of refusing to save forever', async () => {
+    vi.useFakeTimers();
+    const { writer, append, replace, onStatus } = setup();
+    append.mockRejectedValue(new TranscriptStorageError('invalid-history', 'V2 transcript generation or prefix changed'));
+    // First attempt appends (rejected), then the rebuild is scheduled.
+    await vi.advanceTimersByTimeAsync(1500);
+
+    expect(append).toHaveBeenCalled();
+    expect(replace).toHaveBeenCalled();
+    expect(writer.status.reason).not.toBe('invalid-history');
+    expect(onStatus).toHaveBeenCalled();
+    await writer.close();
+  });
+
+  it('stops permanently when even the rebuild cannot be published', async () => {
+    vi.useFakeTimers();
+    const { writer, append, replace } = setup();
+    append.mockRejectedValue(new TranscriptStorageError('invalid-history', 'changed'));
+    replace.mockRejectedValue(new TranscriptStorageError('invalid-history', 'Baseline source changed'));
+    await vi.advanceTimersByTimeAsync(1500);
+
+    // One rebuild attempt only: the second failure keeps the original stop so a
+    // persistently failing mutation is not retried forever.
+    expect(replace).toHaveBeenCalledTimes(1);
+    expect(writer.status).toMatchObject({ state: 'degraded', reason: 'invalid-history' });
+    await writer.close();
+  });
 });
