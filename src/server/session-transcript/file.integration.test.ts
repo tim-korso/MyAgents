@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -138,5 +138,37 @@ describe('V2 real file commit and replacement', () => {
     const confirmed = await file.replace({ generation: 'g1', revision: 1 }, projection, 3);
     expect(confirmed).toEqual({ generation: published.header.generation, revision: 2 });
     expect(transcriptMessages((await file.read()).projection)[0].content).toBe('first snapshot');
+  });
+
+  // A header-only or zero-length target has no committed content. That is what a
+  // live Session looks like after its history is truncated out from under the
+  // writer, and it used to make every later append fail 'invalid-history'
+  // forever while the toast said the conversation could not be saved.
+  it.each([
+    ['header only', '{"kind":"session-transcript","version":2,"sessionId":"session-test","generation":"other","baseRevision":0,"baseline":false}\n'],
+    ['zero length', ''],
+  ])('rebuilds an empty target that lost its committed content (%s)', async (_label, contents) => {
+    const { file, filePath } = await setup();
+    await writeFile(filePath, contents);
+    const projection = (await file.read().catch(() => undefined))?.projection ?? createTranscriptProjection();
+    applyTranscriptOperation(projection, { kind: 'message-create', message: { id: 'live', role: 'user', content: 'survived', timestamp: 't' } });
+
+    // The generation differs from ours because the file was recreated.
+    const committed = await file.replace({ generation: 'g1', revision: 1 }, projection, 7);
+    const restored = await file.read();
+    expect(restored.tail).toBe('clean');
+    expect(restored.header).toMatchObject({ generation: committed.generation, baseline: true });
+    expect(transcriptMessages(restored.projection).find(row => row.id === 'live')?.content).toBe('survived');
+  });
+
+  it('still refuses to overwrite a target that has committed content', async () => {
+    const { file, filePath } = await setup();
+    const before = await readFile(filePath, 'utf8');
+    const projection = (await file.read()).projection;
+    // One committed batch exists, so a mismatched generation means a genuinely
+    // different history, not a lost header.
+    await expect(file.replace({ generation: 'stale-generation', revision: 1 }, projection, 5))
+      .rejects.toThrow('Baseline source changed');
+    expect(await readFile(filePath, 'utf8')).toBe(before);
   });
 });

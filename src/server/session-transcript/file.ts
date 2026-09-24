@@ -199,23 +199,39 @@ export class TranscriptFile implements TranscriptStorage {
     });
   }
 
+  /** A target with no bytes cannot hold committed content, only a lost header. */
+  private async isZeroLength(): Promise<boolean> {
+    try { return (await stat(this.options.filePath)).size === 0; } catch { return false; }
+  }
+
   private async publishReplacement(): Promise<TranscriptCommitTarget> {
     const pending = this.pendingReplacement!;
     await this.options.withLock(async () => {
       let published = false;
+      let adoptable = false;
       try {
         const source = await this.read();
         published = source.header.generation === pending.generation && source.revision === pending.revision && source.tail === 'clean';
         if (!published && (source.header.generation !== pending.expected.generation || source.revision !== pending.expected.revision
           || (source.tail !== 'clean' && !(this.options.recoverIncompleteTail && source.tail === 'incomplete')))) {
-          throw new TranscriptStorageError('invalid-history', 'Baseline source changed');
+          // A file holding a header but zero batch lines has no committed
+          // content. Its generation may legitimately differ from ours — the
+          // history was truncated or the header recreated underneath a live
+          // writer — and replacing it destroys nothing. Anything with even one
+          // committed batch still fails here, so a genuinely diverged history
+          // is never silently overwritten.
+          adoptable = source.lastBatchId === null && source.revision === 0;
+          if (!adoptable) throw new TranscriptStorageError('invalid-history', 'Baseline source changed');
         }
-        if (!published && source.tail === 'incomplete') {
+        if (!published && !adoptable && source.tail === 'incomplete') {
           const file = await open(this.options.filePath, 'r+');
           try { await file.truncate(source.validBytes); await file.sync(); } finally { await file.close(); }
         }
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || !this.options.allowCreate || pending.expected.revision !== 0) throw error;
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT' && this.options.allowCreate && pending.expected.revision === 0) adoptable = true;
+        // A zero-length target cannot decode and cannot hold committed content.
+        else if (await this.isZeroLength()) adoptable = true;
+        else throw error;
       }
       if (!published) {
         await this.options.prepareReplacement?.(pending.expected, { generation: pending.generation, revision: pending.revision });
