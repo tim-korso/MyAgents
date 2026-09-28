@@ -175,20 +175,35 @@ function translateAssistantMessage(
         },
       });
     } else if (block.type === 'thinking') {
-      // Preserve thinking blocks as reasoning_content for upstream models
-      // that require it in conversation history (e.g. DeepSeek reasoner)
+      // Thinking is collected but NOT sent back by default — see the
+      // reasoning_content decision below.
       if (block.thinking) {
         thinkingParts.push(block.thinking);
       }
     }
   }
 
-  // When thinking is enabled, some upstream models (e.g. Kimi) require reasoning_content
-  // on ALL assistant messages that contain tool_calls. The SDK may strip thinking blocks
-  // with empty signatures, leaving tool_call messages without reasoning_content.
-  // Provide an empty reasoning_content to satisfy this validation.
-  const needsReasoningContent = thinkingParts.length > 0
-    || (thinkingEnabled && toolCalls.length > 0);
+  // Whether to echo this turn's thinking back in the next request.
+  //
+  // Replaying historical reasoning is a token cost with no benefit on the
+  // providers that matter here, and DeepSeek documents it explicitly: between
+  // two user messages, an assistant turn's `reasoning_content` from a turn
+  // without tool calls does not need to be carried in the context, and passing
+  // it in a later turn is *ignored* by the API. Paying for tokens the model
+  // discards is the worst of both worlds, and it grows without bound as a
+  // session gets longer (every prior turn's full reasoning is re-sent).
+  //
+  // The exception is a turn that contains tool calls: the model's next request
+  // must correlate the tool call with the reasoning that produced it, and some
+  // providers (Kimi K2.5 among them) reject a tool_calls message that omits it.
+  // So the field is emitted only when there are tool calls to correlate — the
+  // one case where it carries information forward.
+  //
+  // Note this also keeps the prompt prefix stable, which is what prompt caching
+  // keys on: dropping a field that varies in length per turn removes a source of
+  // prefix churn.
+  const needsReasoningContent = toolCalls.length > 0
+    && (thinkingParts.length > 0 || thinkingEnabled);
   const structuredText: OpenAITextContentPart[] = textBlocks.map((block) => {
     const breakpoint = projectPromptCacheBreakpoint(promptCacheBreakpoints, block.cache_control);
     return {

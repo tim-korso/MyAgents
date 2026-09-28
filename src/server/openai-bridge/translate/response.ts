@@ -3,6 +3,7 @@
 import type { AnthropicResponse, AnthropicResponseContentBlock, AnthropicStopReason } from '../types/anthropic';
 import type { OpenAIResponse } from '../types/openai';
 import { translateToolCalls } from './tools';
+import { extractReasoningText } from './reasoning-text';
 import { generateMessageId } from '../utils/id';
 import { fromOpenAIUsage, toAnthropicUsage, type UsageWarningLogger } from './usage';
 
@@ -28,9 +29,10 @@ export function translateResponse(
   const content: AnthropicResponseContentBlock[] = [];
 
   if (choice) {
-    // reasoning_content → thinking block (if enabled)
+    // thinking channel → thinking block (if enabled). Field name varies by
+    // provider; see extractReasoningText.
     if (translateReasoning) {
-      const reasoning = (choice.message as { reasoning_content?: string }).reasoning_content;
+      const reasoning = extractReasoningText(choice.message);
       if (reasoning) {
         content.push({
           type: 'thinking',

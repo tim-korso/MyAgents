@@ -3,6 +3,7 @@
 import type { AnthropicStreamEvent, AnthropicResponse, AnthropicStopReason } from '../types/anthropic';
 import type { OpenAIStreamChunk, OpenAIStreamToolCall } from '../types/openai';
 import { translateStopReason } from './response';
+import { extractReasoningText } from './reasoning-text';
 import { generateMessageId, generateToolUseId } from '../utils/id';
 import { emptyUsage, mergeUsage, toAnthropicUsage, type UsageSnapshot, type UsageWarningLogger } from './usage';
 
@@ -85,8 +86,10 @@ export class StreamTranslator {
 
     const delta = choice.delta;
 
-    // Handle reasoning_content (thinking)
-    if (this.translateReasoning && delta.reasoning_content) {
+    // Handle the thinking channel. Field name varies by provider: DeepSeek sends
+    // `reasoning`, not `reasoning_content` — see extractReasoningText.
+    const reasoningText = extractReasoningText(delta);
+    if (this.translateReasoning && reasoningText) {
       if (this.activeBlockType !== 'thinking') {
         this.closeActiveBlock(events);
         this.activeBlockType = 'thinking';
@@ -99,7 +102,7 @@ export class StreamTranslator {
       events.push({
         type: 'content_block_delta',
         index: this.contentIndex,
-        delta: { type: 'thinking_delta', thinking: delta.reasoning_content },
+        delta: { type: 'thinking_delta', thinking: reasoningText },
       });
     }
 

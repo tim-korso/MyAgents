@@ -112,6 +112,8 @@ export interface OpenAIChoice {
     role: 'assistant';
     content: string | null;
     reasoning_content?: string;
+    /** DeepSeek's own field name; see OpenAIStreamDelta.reasoning. */
+    reasoning?: string | null;
     tool_calls?: OpenAIToolCall[];
   };
   finish_reason: OpenAIFinishReason | null;
@@ -153,6 +155,15 @@ export interface OpenAIStreamDelta {
   role?: 'assistant';
   content?: string | null;
   reasoning_content?: string | null;
+  /**
+   * DeepSeek's own name for the streaming thinking channel.
+   *
+   * DeepSeek sends `reasoning` and does NOT send `reasoning_content` (verified
+   * against the live endpoint: the response carries `reasoning` +
+   * `reasoning_details` and no `reasoning_content` key at all). Reading only
+   * `reasoning_content` silently dropped every thinking token for these models.
+   */
+  reasoning?: string | null;
   tool_calls?: OpenAIStreamToolCall[];
 }
 
